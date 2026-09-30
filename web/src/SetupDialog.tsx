@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'preact/hooks'
 import { CAPACITY, decodeSettings, fahrenheit, rawFor, type Settings, type Status } from './protocol'
 import { fmtDuration, fromUnit, toUnit, type Unit } from './units'
 
-type StartKind = 'software' | 'button' | 'at'
-type StopKind = 'software' | 'whenFull' | 'afterReadings'
+type StartKind = 'software' | 'manual' | 'button' | 'at'
+type StopKind = 'software' | 'whenFull' | 'afterReadings' | 'at'
 interface AlarmForm { enabled: boolean; value: string }
 
 const INTERVAL_UNITS = { s: 1, min: 60, h: 3600 } as const
@@ -35,6 +35,7 @@ export function SetupDialog(props: {
   const [delay, setDelay] = useState('0')
   const [startAt, setStartAt] = useState(localInput(new Date(Date.now() + 3600_000)))
   const [stopKind, setStopKind] = useState<StopKind>('software')
+  const [stopAt, setStopAt] = useState(localInput(new Date(Date.now() + 86400_000)))
   const [stopCount, setStopCount] = useState('1000')
   const [alarms, setAlarms] = useState<AlarmForm[][]>(() =>
     current.probes.map((p) => [p.high, p.low].map((a) => ({
@@ -54,6 +55,7 @@ export function SetupDialog(props: {
       throw new Error('Interval must be between 1 second and about 18 hours.')
     const start: Settings['start'] =
       startKind === 'software' ? { kind: 'software' }
+      : startKind === 'manual' ? { kind: 'manual' }
       : startKind === 'button' ? { kind: 'button', delaySeconds: Number(delay) }
       : { kind: 'at', date: new Date(startAt) }
     if (start.kind === 'button' && !(Number.isInteger(start.delaySeconds) && start.delaySeconds >= 0 && start.delaySeconds <= 255))
@@ -63,9 +65,14 @@ export function SetupDialog(props: {
     const stop: Settings['stop'] =
       stopKind === 'software' ? { kind: 'software' }
       : stopKind === 'whenFull' ? { kind: 'whenFull' }
+      : stopKind === 'at' ? { kind: 'at', date: new Date(stopAt) }
       : { kind: 'afterReadings', count: n }
     if (stop.kind === 'afterReadings' && !(Number.isInteger(n) && n >= 1 && n <= CAPACITY))
       throw new Error(`Stop after 1–${CAPACITY} readings.`)
+    if (stop.kind === 'at') {
+      if (!(stop.date.getTime() > Date.now())) throw new Error('Stop time must be in the future.')
+      if (start.kind === 'at' && stop.date <= start.date) throw new Error('Stop time must be after the start time.')
+    }
     const probes = alarms.map((pair, p) => {
       const [high, low] = pair.map((a, i) => {
         const def = i === 0 ? MAX_F : MIN_F
@@ -129,8 +136,9 @@ export function SetupDialog(props: {
         <fieldset class="field">
           <legend>Start</legend>
           <label><input type="radio" checked={startKind === 'software'} onChange={() => setStartKind('software')} /> Now</label>
+          <label><input type="radio" checked={startKind === 'manual'} onChange={() => setStartKind('manual')} /> Later — with Start in this app or the logger's button</label>
           <label class="row">
-            <input type="radio" checked={startKind === 'button'} onChange={() => setStartKind('button')} /> When the logger's button is pressed, after
+            <input type="radio" checked={startKind === 'button'} onChange={() => setStartKind('button')} /> On the logger's button, after a delay of
             <input type="number" min="0" max="255" class="tiny" value={delay} disabled={startKind !== 'button'}
               onInput={(e) => setDelay(e.currentTarget.value)} /> s
           </label>
@@ -145,6 +153,11 @@ export function SetupDialog(props: {
           <legend>Stop</legend>
           <label><input type="radio" checked={stopKind === 'software'} onChange={() => setStopKind('software')} /> When I press Stop</label>
           <label><input type="radio" checked={stopKind === 'whenFull'} onChange={() => setStopKind('whenFull')} /> When memory is full</label>
+          <label class="row">
+            <input type="radio" checked={stopKind === 'at'} onChange={() => setStopKind('at')} /> At
+            <input type="datetime-local" step="1" value={stopAt} disabled={stopKind !== 'at'}
+              onInput={(e) => setStopAt(e.currentTarget.value)} />
+          </label>
           <label class="row">
             <input type="radio" checked={stopKind === 'afterReadings'} onChange={() => setStopKind('afterReadings')} /> After
             <input type="number" min="1" max={CAPACITY} class="short" value={stopCount} disabled={stopKind !== 'afterReadings'}

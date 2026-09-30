@@ -88,12 +88,12 @@ The write is the post-erase status block with these changes (reproduced byte-for
 | Offset | Meaning |
 |---|---|
 | 0x01–0x20 | Logger name, NUL-padded (factory default "NO TITLE") |
-| 0x21 | Flags. Low nibble kept as read (`0d`). High nibble = alarm enables: `10` probe 1 over, `20` probe 2 over, `80` probe 2 under, `40` probe 1 under (inferred) |
+| 0x21 | Flags. Low nibble kept as read (`0d`). High nibble = alarm enables: `10` probe 1 over, `40` probe 1 under, `20` probe 2 over, `80` probe 2 under |
 | 0x22 | Always written `28` |
-| 0x23 | Mode (written): low nibble start (`1` software, `2` button, `4` date/time), high nibble stop (`0` software, `2` when full, `8` after N readings, `4` date/time? unobserved). Status reads back `00` idle/stopped, or `0x08 | start mode` while armed AND while logging (use actual start 0x33 + reading count to tell apart) |
+| 0x23 | Mode (written): low nibble start (`1` manually — by software or the logger's button, `2` button press + delay, `4` date/time), high nibble stop (`0` by software, `2` when full, `4` date/time, `8` after N readings). Status reads back `00` idle/stopped, or `0x08 | start mode` while armed AND while logging (use actual start 0x33 + reading count to tell apart) |
 | 0x26 | Always written `14` (status reads `0e`) |
-| 0x27, 0x2d | BCD start / stop date-time. Studio fills both even when unused |
-| 0x39 | Button start delay, seconds (default `3b` = 59) |
+| 0x27, 0x2d | BCD start / stop date-time. The vendor software always fills both: unused ones get the other date, or a default |
+| 0x39 | Button start delay, seconds (default `3b` = 59). The vendor UI takes hours/minutes/seconds, so this may be wider than one byte — only values < 256 seen. Written even when unused |
 | 0x44 | LE u16 interval, seconds (factory default 6) |
 | 0x46, 0x48 | Probe 1 over / under limit, LE u16 raw. Disabled alarms keep a limit (default 1372 °F / −100 °F) |
 | 0x4f, 0x51 | Probe 2 over / under limit |
@@ -105,7 +105,7 @@ The write is the post-erase status block with these changes (reproduced byte-for
 
 Commands (report 8): `08 'E' 'T' 'I' 10` = start now, `08 'E' 'T' 'I' 20` = stop.
 
-Not yet captured: stop at date/time, disabling probe 2, probe 1 under alarm.
+Not yet captured: a button delay of 256 s or more (to learn the field's width).
 
 ## Export (`.msdb`)
 

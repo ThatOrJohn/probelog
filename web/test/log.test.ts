@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendLatest, change, recent, fromCsv, logFromReadings, stats, toCsv } from '../src/log'
+import { appendLatest, beyond, change, recent, timeInAlarm, fromCsv, logFromReadings, stats, toCsv } from '../src/log'
 import { rawFor } from '../src/protocol'
 
 describe('log', () => {
@@ -50,5 +50,12 @@ describe('log', () => {
     expect(change(l, 0, 1000)).toBe(-20)
     expect(change({ ...l, probes: [[null, null, null, 1]] }, 0, 300)).toBeNull()
     expect(recent(l, 0, 2)).toEqual([60, 50])
+  })
+
+  it('counts readings past alarm limits', () => {
+    const l = { title: 't', times: [0, 10, 20, 30], probes: [[69, 71, null, 75]] }
+    expect(beyond(70, { kind: 'over', f: 70 })).toBe(false)
+    expect(timeInAlarm(l, 0, [{ kind: 'over', f: 70 }])).toEqual({ count: 2, seconds: 20 })
+    expect(timeInAlarm(l, 0, [{ kind: 'under', f: 70 }]).count).toBe(1)
   })
 })

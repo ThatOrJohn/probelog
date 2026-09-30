@@ -9,4 +9,5 @@ windows-data/
 
 # Local tooling
 .claude/
+.vscode/
 .DS_Store

@@ -20,19 +20,19 @@ final class SettingsTests: XCTestCase {
     /// Rebuilding every captured Studio save from its decoded settings must give identical bytes.
     func testReproducesStudioWrites() throws {
         let fx = try fixtures()
-        XCTAssertEqual(fx.count, 8)
+        XCTAssertEqual(fx.count, 11)
         for f in fx {
             let base = bytes(f.statusAfterErase), studio = bytes(f.studioWrite)
-            var settings = Settings(block: studio)
-            // Studio fills the start/stop date even when unused; carry its value over for comparison.
-            let studioDate = bcdDate(studio[Settings.startDate..<Settings.startDate + 6])!
-            if case .software = settings.start {} else if case .button = settings.start {} else { settings.start = .at(studioDate) }
+            let settings = Settings(block: studio)
             var ours = settings.encode(base: base, clock: bcdDate(studio[Settings.clock..<Settings.clock + 6])!)
-            if case .at = settings.start {} else {
-                for o in Settings.startDate..<Settings.startDate + 6 { ours[o] = studio[o] }
-            }
-            // Studio's unused stop date is its own default; only compare it for date starts.
-            for o in Settings.stopDate..<Settings.stopDate + 6 { ours[o] = studio[o] }
+            // The vendor software fills unused date fields and its delay box with its own values; skip those.
+            var startIsAt = false, stopIsAt = false, isButton = false
+            if case .at = settings.start { startIsAt = true }
+            if case .button = settings.start { isButton = true }
+            if case .at = settings.stop { stopIsAt = true }
+            if !startIsAt && !stopIsAt { for o in Settings.startDate..<Settings.startDate + 6 { ours[o] = studio[o] } }
+            if !stopIsAt { for o in Settings.stopDate..<Settings.stopDate + 6 { ours[o] = studio[o] } }
+            if !isButton { ours[Settings.buttonDelay] = studio[Settings.buttonDelay] }
             let diff = (0..<studio.count).filter { ours[$0] != studio[$0] }.map { String(format: "%02x:%02x≠%02x", $0, ours[$0], studio[$0]) }
             XCTAssertEqual(diff, [], f.source)
         }
@@ -57,5 +57,11 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(w[5].probes[1].low, .init(enabled: true, raw: rawFor(fahrenheit: 0)))
         XCTAssertEqual(w[6].intervalSeconds, 600)
         XCTAssertEqual(w[7].name, "test")
+
+        // tds_save3: stop at 9/30/26 1:49 PM, then probe 2 off, then probe 1 under alarm at 22 °F.
+        XCTAssertEqual(w[8].start, .manual)
+        XCTAssertEqual(w[8].stop, .at(Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 30, hour: 13, minute: 49))!))
+        XCTAssertEqual(w[9].probeCount, 1)
+        XCTAssertEqual(w[10].probes[0].low, .init(enabled: true, raw: rawFor(fahrenheit: 22)))
     }
 }

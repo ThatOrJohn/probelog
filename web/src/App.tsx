@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { Chart, type AlarmLine } from './Chart'
 import { LoggerDevice, describeLogger, grantedLoggers, requestLogger, webHidSupported, type LoggerSummary } from './device'
-import { appendLatest, fromCsv, logFromReadings, recent, stamp, toCsv, type LogData } from './log'
+import { appendLatest, beyond, fromCsv, logFromReadings, recent, stamp, toCsv, type LogData } from './log'
 import { ChannelPanel, LoggerPanel, type ReadingSource } from './Panels'
 import { decodeSettings, fahrenheit, type Settings, type Status } from './protocol'
 import { SetupDialog } from './SetupDialog'
-import { fmtClock, useUnit } from './units'
+import { fmtClock, toUnit, useUnit } from './units'
 
 const POLL_MS = 5000
 /** Live view polls often enough to catch every reading at short intervals. */
@@ -290,6 +290,16 @@ export function App() {
     }
     return log ? recent(log, i, 1)[0] ?? null : null
   }
+  // While logging, put an alarm in the tab title so it's visible from other tabs.
+  const tripped = status?.state === 'logging'
+    ? [0, 1].slice(0, channelCount).flatMap((i) => {
+        const f = latest(i)
+        return f != null && alarms.some((a) => a.probe === i && beyond(f, a)) ? [`CH${i + 1} ${toUnit(f, unit).toFixed(2)} °${unit}`] : []
+      })
+    : []
+  const titleText = tripped.length ? `ALARM · ${tripped.join(' · ')} · ProbeLog` : 'ProbeLog'
+  useEffect(() => { document.title = titleText }, [titleText])
+
   const lastTime = log?.times.length ? new Date(log.times[log.times.length - 1] * 1000) : null
   /** What the big readouts show: the logger's newest logged reading, or the last one in an opened file. */
   const source: ReadingSource | null = status

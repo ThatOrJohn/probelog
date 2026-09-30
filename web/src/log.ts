@@ -111,3 +111,17 @@ export function recent(log: LogData, probe: number, n: number): number[] {
   for (let i = v.length - 1; i >= 0 && out.length < n; i--) if (v[i] != null) out.unshift(v[i]!)
   return out
 }
+
+/** A limit is tripped when a reading goes strictly past it. */
+export const beyond = (f: number, limit: { kind: 'over' | 'under'; f: number }) =>
+  limit.kind === 'over' ? f > limit.f : f < limit.f
+
+/** How many of a probe's readings were past any of its alarm limits, and roughly for how long. */
+export function timeInAlarm(log: LogData, probe: number, limits: { kind: 'over' | 'under'; f: number }[]) {
+  const v = log.probes[probe] ?? []
+  let count = 0
+  for (const f of v) if (f != null && limits.some((l) => beyond(f, l))) count++
+  const n = log.times.length
+  const interval = n > 1 ? (log.times[n - 1] - log.times[0]) / (n - 1) : 0
+  return { count, seconds: count * interval }
+}

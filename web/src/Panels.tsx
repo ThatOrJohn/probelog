@@ -1,5 +1,5 @@
 import type { AlarmLine } from './Chart'
-import { change, recent, stamp, stats, type LogData } from './log'
+import { beyond, change, recent, stamp, stats, timeInAlarm, type LogData } from './log'
 import type { LoggerSummary } from './device'
 import { CAPACITY, type Status } from './protocol'
 import { fmtClock, fmtDuration, toUnit, type Unit } from './units'
@@ -51,8 +51,12 @@ export function ChannelPanel({ index, enabled, connected, latestF, source, now, 
   const s = series ? stats(series) : null
   const delta = log && series ? change(log, index, 300) : null
   const cls = `ch${index + 1}`
+  // Compared here rather than read from the logger: its own alarm state isn't known.
+  const tripped = enabled && latestF != null ? alarms.find((a) => beyond(latestF, a)) : undefined
+  const active = !!tripped && source?.kind === 'logging'
+  const inAlarm = log && series && alarms.length ? timeInAlarm(log, index, alarms) : null
   return (
-    <section class="panel channel" aria-label={`Channel ${index + 1}`}>
+    <section class={`panel channel ${active ? 'alarm' : ''}`} aria-label={`Channel ${index + 1}`}>
       <div class="panel-head">
         <span class="label" style={{ color: 'var(--bright)' }}>
           <span class="swatch" style={{ background: `var(--probe${index + 1})` }} />CH {index + 1}
@@ -61,7 +65,9 @@ export function ChannelPanel({ index, enabled, connected, latestF, source, now, 
           {!enabled && <span class="tag muted">OFF</span>}
           {enabled && connected && alarms.length === 0 && <span class="tag muted" style={{ color: 'var(--muted)' }}>NO ALARM</span>}
           {alarms.map((a) => (
-            <span class="tag" key={a.kind}>{a.kind === 'over' ? 'HI ▲' : 'LO ▼'} {num(a.f, unit, 1)}</span>
+            <span class={`tag ${a === tripped ? (active ? 'tripped' : 'was-tripped') : ''}`} key={a.kind}>
+              {a.kind === 'over' ? 'HI ▲' : 'LO ▼'} {num(a.f, unit, 1)}
+            </span>
           ))}
         </span>
       </div>
@@ -69,7 +75,12 @@ export function ChannelPanel({ index, enabled, connected, latestF, source, now, 
         <span class="value">{enabled && latestF != null ? num(latestF, unit) : '--.--'}</span>
         <span class="unit">°{unit}</span>
       </div>
-      <p class="source">{enabled && latestF != null && source ? sourceCaption(source, now) : enabled ? 'No reading' : 'Probe disabled'}</p>
+      {active
+        ? <p class="source alarm-text" role="alert">Alarm · {tripped!.kind} {num(tripped!.f, unit, 1)} °{unit}</p>
+        : <p class="source">
+            {enabled && latestF != null && source ? sourceCaption(source, now) : enabled ? 'No reading' : 'Probe disabled'}
+            {tripped && ` · ${tripped.kind} alarm limit`}
+          </p>}
       {enabled && log ? <Sparkline values={recent(log, index, 60)} probe={index} /> : <div class="spark" />}
       <dl class="stats4">
         <div><dt>MIN</dt><dd>{num(s?.min, unit)}</dd></div>
@@ -77,6 +88,12 @@ export function ChannelPanel({ index, enabled, connected, latestF, source, now, 
         <div><dt>AVG</dt><dd>{num(s?.mean, unit)}</dd></div>
         <div><dt>Δ 5 MIN</dt><dd>{delta == null ? '—' : `${delta >= 0 ? '+' : '−'}${Math.abs(unit === 'F' ? delta : (delta * 5) / 9).toFixed(2)}`}</dd></div>
       </dl>
+      {inAlarm && (
+        <p class={`source ${inAlarm.count ? 'alarm-text' : ''}`}>
+          In alarm {inAlarm.count.toLocaleString()} of {s?.count.toLocaleString() ?? 0} readings
+          {inAlarm.count > 0 && ` · ~${fmtDuration(Math.max(60, inAlarm.seconds))}`}
+        </p>
+      )}
     </section>
   )
 }

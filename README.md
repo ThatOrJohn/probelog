@@ -12,7 +12,7 @@ ProbeLog talks to the logger directly over USB using [WebHID](https://developer.
 
 - **Download** the full log from both probes (up to 8,000 readings each) and chart it
 - **Live view** — watch readings arrive while the logger is recording
-- **Set up** the logger: name, interval, start (now / button press with delay / date and time), stop (manually / when full / after N readings), over/under alarms per probe, and sync its clock to your computer
+- **Set up** the logger: name, interval, probes, start (now / later by button or app / on button press after a delay / at a date and time), stop (manually / when full / after N readings / at a date and time), over/under alarms per probe, and sync its clock to your computer
 - **Start / stop** logging
 - **Export CSV** and re-open CSVs later
 - °F / °C, zoomable chart with alarm lines, per-probe min / max / average / 5-minute change
@@ -64,8 +64,7 @@ Pushes to `main` run the tests and deploy the web app to GitHub Pages.
 
 ## Not supported yet
 
-- Stopping at a date/time
-- Probe 1 "under" alarm is implemented from the pattern of the others but not yet confirmed against the vendor software
+- Button-start delays over 255 seconds (the vendor software allows hours; the field's layout isn't known yet)
 
 ## License
 

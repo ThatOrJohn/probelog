@@ -12,14 +12,17 @@ const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((h) => parseInt(h
 
 describe('settings encoding', () => {
   it('reproduces every captured vendor write byte for byte', () => {
-    expect(fixtures).toHaveLength(8)
+    expect(fixtures).toHaveLength(11)
     for (const f of fixtures) {
       const base = hex(f.statusAfterErase)
       const studio = hex(f.studioWrite)
       const ours = encodeSettings(decodeSettings(studio), base, bcdDate(studio, OFFSETS.clock)!)
       // The vendor software fills unused start/stop dates with its own defaults; don't compare those.
-      if (decodeSettings(studio).start.kind !== 'at') ours.set(studio.subarray(OFFSETS.startDate, OFFSETS.startDate + 6), OFFSETS.startDate)
-      ours.set(studio.subarray(OFFSETS.stopDate, OFFSETS.stopDate + 6), OFFSETS.stopDate)
+      const settings = decodeSettings(studio)
+      if (settings.start.kind !== 'at' && settings.stop.kind !== 'at') ours.set(studio.subarray(OFFSETS.startDate, OFFSETS.startDate + 6), OFFSETS.startDate)
+      if (settings.stop.kind !== 'at') ours.set(studio.subarray(OFFSETS.stopDate, OFFSETS.stopDate + 6), OFFSETS.stopDate)
+      // Likewise its button-delay box, which only matters for a button start.
+      if (settings.start.kind !== 'button') ours[OFFSETS.buttonDelay] = studio[OFFSETS.buttonDelay]
       const diff = [...studio].flatMap((v, i) => (ours[i] === v ? [] : [`${i.toString(16)}:${ours[i].toString(16)}≠${v.toString(16)}`]))
       expect(diff, f.source).toEqual([])
     }
@@ -38,6 +41,14 @@ describe('settings encoding', () => {
     expect(w[5].probes[1].low).toEqual({ enabled: true, raw: rawFor(0) })
     expect(w[6].intervalSeconds).toBe(600)
     expect(w[7].name).toBe('test')
+
+    // tds_save3: stop at 9/30/26 1:49 PM, then probe 2 off, then probe 1 under alarm at 22 °F.
+    expect(w[8].start).toEqual({ kind: 'manual' })
+    expect(w[8].stop).toEqual({ kind: 'at', date: new Date(2026, 8, 30, 13, 49, 0) })
+    expect(w[8].probeCount).toBe(2)
+    expect(w[9].probeCount).toBe(1)
+    expect(w[10].probes[0].low).toEqual({ enabled: true, raw: rawFor(22) })
+    expect(w[10].probes[0].high.enabled).toBe(false)
   })
 })
 

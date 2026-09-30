@@ -24,6 +24,11 @@ function alarmPlugin(lines: AlarmLine[], unit: Unit): uPlot.Plugin {
           const v = toUnit(a.f, unit)
           const y = u.valToPos(v, 'y', true)
           if (y < bbox.top || y > bbox.top + bbox.height) continue
+          // Faint red band over the alarm zone, beyond the limit.
+          ctx.fillStyle = css('--live')
+          ctx.globalAlpha = 0.07
+          if (a.kind === 'over') ctx.fillRect(bbox.left, bbox.top, bbox.width, y - bbox.top)
+          else ctx.fillRect(bbox.left, y, bbox.width, bbox.top + bbox.height - y)
           ctx.strokeStyle = ctx.fillStyle = probeColor(a.probe)
           ctx.globalAlpha = 0.6
           ctx.setLineDash([6 * px, 4 * px])

@@ -7,8 +7,8 @@ usage: tdlog status
        tdlog parse-raw file.bin [-o file.csv]
        tdlog setup [options] [--yes]     (ERASES the logger; without --yes only shows the plan)
          --name NAME            --interval SECONDS        --probes 1|2
-         --start software|button[:DELAY_S]|"YYYY-MM-DD HH:MM:SS"
-         --stop software|full|after:N
+         --start software|manual|button[:DELAY_S]|"YYYY-MM-DD HH:MM:SS"
+         --stop software|full|after:N|"YYYY-MM-DD HH:MM:SS"
          --p1-high F  --p1-low F  --p2-high F  --p2-low F   (°F; omit to disable)
        tdlog start | stop
 """
@@ -17,6 +17,7 @@ func describe(_ s: Settings) -> String {
     let start: String
     switch s.start {
     case .software: start = "now (by software)"
+    case .manual: start = "later, by software or the logger's button"
     case .button(let d): start = "on button press, after \(d) s"
     case .at(let d): start = "at \(fmt(d))"
     }
@@ -25,6 +26,7 @@ func describe(_ s: Settings) -> String {
     case .software: stop = "by software"
     case .whenFull: stop = "when full"
     case .afterReadings(let n): stop = "after \(n) readings"
+    case .at(let d): stop = "at \(fmt(d))"
     }
     func alarm(_ a: Settings.Alarm) -> String { a.enabled ? String(format: "%.1f °F", fahrenheit(raw: a.raw)) : "off" }
     var lines = ["Name:      \(s.name)", "Interval:  \(s.intervalSeconds) s", "Probes:    \(s.probeCount)",
@@ -49,6 +51,7 @@ func parseSettings(_ args: [String], current: Settings) throws -> Settings {
     }
     if let v = option("--start", in: args) {
         if v == "software" { s.start = .software }
+        else if v == "manual" { s.start = .manual }
         else if v.hasPrefix("button") {
             let d = v.split(separator: ":").dropFirst().first.flatMap { Int($0) } ?? 0
             guard (0...255).contains(d) else { throw Bad(description: "button delay must be 0–255 s") }
@@ -60,6 +63,7 @@ func parseSettings(_ args: [String], current: Settings) throws -> Settings {
         if v == "software" { s.stop = .software }
         else if v == "full" { s.stop = .whenFull }
         else if v.hasPrefix("after:"), let n = Int(v.dropFirst(6)), n > 0 { s.stop = .afterReadings(n) }
+        else if let d = stamp.date(from: v) { s.stop = .at(d) }
         else { throw Bad(description: "bad --stop") }
     }
     // Alarms: any alarm flag given resets all four to exactly what's on the command line.

@@ -105,8 +105,14 @@ export function parseReadings(chunks: Uint8Array[]): Reading[] {
 
 // ---- Settings (report-2 write) ----
 
-export type Start = { kind: 'software' } | { kind: 'button'; delaySeconds: number } | { kind: 'at'; date: Date }
-export type Stop = { kind: 'software' } | { kind: 'whenFull' } | { kind: 'afterReadings'; count: number }
+/**
+ * `manual` arms the logger to be started by software or its button (the vendor software's
+ * "Manually"); `software` is the same mode, started right away by this app.
+ */
+export type Start =
+  | { kind: 'software' } | { kind: 'manual' } | { kind: 'button'; delaySeconds: number } | { kind: 'at'; date: Date }
+export type Stop =
+  | { kind: 'software' } | { kind: 'whenFull' } | { kind: 'afterReadings'; count: number } | { kind: 'at'; date: Date }
 export interface Alarm { enabled: boolean; raw: number }
 export interface Probe { high: Alarm; low: Alarm }
 export interface Settings {
@@ -128,7 +134,7 @@ const O = {
   interval: 0x44, probeCount: 0x66, stopAfter: 0x6f, clock: 0x95,
 } as const
 const LIMIT_BASE = [0x46, 0x4f]
-/** Alarm-enable bits in the flags byte: [probe][high, low]. Probe 1 low (0x40) is inferred, not yet observed. */
+/** Alarm-enable bits in the flags byte: [probe][high, low]. */
 const ALARM_BITS = [[0x10, 0x40], [0x20, 0x80]]
 export const WRITE_LENGTH = 192
 export const OFFSETS = O
@@ -154,17 +160,20 @@ export function encodeSettings(s: Settings, base: Uint8Array, now: Date): Uint8A
   b[0x26] = 0x14
 
   let startNibble = 1
-  let startDate = now
   let delay = b[O.buttonDelay] === 0 ? 59 : b[O.buttonDelay]
   if (s.start.kind === 'button') { startNibble = 2; delay = s.start.delaySeconds }
-  if (s.start.kind === 'at') { startNibble = 4; startDate = s.start.date }
+  if (s.start.kind === 'at') startNibble = 4
   let stopNibble = 0
   let stopAfter = 1
   if (s.stop.kind === 'whenFull') stopNibble = 2
+  if (s.stop.kind === 'at') stopNibble = 4
   if (s.stop.kind === 'afterReadings') { stopNibble = 8; stopAfter = s.stop.count }
   b[O.mode] = (stopNibble << 4) | startNibble
+  // Unused date fields: the vendor software fills them with whichever date is set, else now.
+  const stopDate = s.stop.kind === 'at' ? s.stop.date : null
+  const startDate = s.start.kind === 'at' ? s.start.date : stopDate ?? now
   putBcdDate(b, O.startDate, startDate)
-  putBcdDate(b, O.stopDate, startDate)
+  putBcdDate(b, O.stopDate, stopDate ?? startDate)
   b[O.buttonDelay] = Math.max(0, Math.min(255, delay))
 
   put16(b, O.interval, s.intervalSeconds)
@@ -198,9 +207,10 @@ export function decodeSettings(b: Uint8Array): Settings {
     start:
       startNibble === 2 ? { kind: 'button', delaySeconds: b[O.buttonDelay] }
       : startNibble === 4 ? { kind: 'at', date: bcdDate(b, O.startDate) ?? new Date(0) }
-      : { kind: 'software' },
+      : { kind: 'manual' },
     stop:
       stopNibble === 2 ? { kind: 'whenFull' }
+      : stopNibble === 4 ? { kind: 'at', date: bcdDate(b, O.stopDate) ?? new Date(0) }
       : stopNibble === 8 ? { kind: 'afterReadings', count: stopAfter }
       : { kind: 'software' },
     probes: [probe(0), probe(1)],

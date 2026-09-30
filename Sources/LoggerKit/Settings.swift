@@ -5,8 +5,10 @@ import Foundation
 /// erase command, so unknown bytes are passed through untouched.
 public struct Settings: Equatable {
     public enum Start: Equatable {
-        /// Armed now; logging begins with the "start now" command.
+        /// Armed, then started right away with the "start now" command.
         case software
+        /// Armed for a later start by software or the logger's button (the vendor software's "Manually").
+        case manual
         case button(delaySeconds: Int)
         case at(Date)
     }
@@ -14,6 +16,7 @@ public struct Settings: Equatable {
         case software
         case whenFull
         case afterReadings(Int)
+        case at(Date)
     }
     public struct Alarm: Equatable {
         public var enabled: Bool
@@ -41,7 +44,7 @@ public struct Settings: Equatable {
     public static let interval = 0x44, probeCountOffset = 0x66, stopAfter = 0x6f, clock = 0x95
     public static let calibration = 0x73..<0x95
     public static let limitBase = [0x46, 0x4f]
-    /// Alarm-enable bits in `flags`: [probe][high, low]. Probe 1 low (0x40) is inferred, not yet observed.
+    /// Alarm-enable bits in `flags`: [probe][high, low].
     public static let alarmBits: [[UInt8]] = [[0x10, 0x40], [0x20, 0x80]]
     public static let writeLength = 192
 
@@ -63,22 +66,25 @@ public struct Settings: Equatable {
         b[0x26] = 0x14
 
         let startNibble: UInt8
-        var startDate = now, delay = Int(b[Settings.buttonDelay]) == 0 ? 59 : Int(b[Settings.buttonDelay])
+        var startDate: Date?, delay = Int(b[Settings.buttonDelay]) == 0 ? 59 : Int(b[Settings.buttonDelay])
         switch start {
-        case .software: startNibble = 0x1
+        case .software, .manual: startNibble = 0x1
         case .button(let d): startNibble = 0x2; delay = d
         case .at(let d): startNibble = 0x4; startDate = d
         }
         let stopNibble: UInt8
-        var stopAfter = 1
+        var stopAfter = 1, stopDate: Date?
         switch stop {
         case .software: stopNibble = 0x0
         case .whenFull: stopNibble = 0x2
+        case .at(let d): stopNibble = 0x4; stopDate = d
         case .afterReadings(let n): stopNibble = 0x8; stopAfter = n
         }
         b[Settings.mode] = stopNibble << 4 | startNibble
-        put(bcd: startDate, into: &b, at: Settings.startDate)
-        put(bcd: startDate, into: &b, at: Settings.stopDate)
+        // Unused date fields: the vendor software fills them with whichever date is set, else now.
+        let start = startDate ?? stopDate ?? now
+        put(bcd: start, into: &b, at: Settings.startDate)
+        put(bcd: stopDate ?? start, into: &b, at: Settings.stopDate)
         b[Settings.buttonDelay] = UInt8(clamping: delay)
 
         put16(intervalSeconds, into: &b, at: Settings.interval)
@@ -102,10 +108,11 @@ public struct Settings: Equatable {
         switch b[Settings.mode] & 0x0f {
         case 0x2: start = .button(delaySeconds: Int(b[Settings.buttonDelay]))
         case 0x4: start = .at(bcdDate(b[Settings.startDate..<Settings.startDate + 6]) ?? .distantPast)
-        default: start = .software
+        default: start = .manual
         }
         switch b[Settings.mode] >> 4 {
         case 0x2: stop = .whenFull
+        case 0x4: stop = .at(bcdDate(b[Settings.stopDate..<Settings.stopDate + 6]) ?? .distantPast)
         case 0x8: stop = .afterReadings(stopAfterValue)
         default: stop = .software
         }
