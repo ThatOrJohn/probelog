@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
 import { Chart, type AlarmLine } from './Chart'
-import { LoggerDevice, grantedLoggers, requestLogger, webHidSupported } from './device'
+import { LoggerDevice, describeLogger, grantedLoggers, requestLogger, webHidSupported, type LoggerSummary } from './device'
 import { appendLatest, fromCsv, logFromReadings, recent, stamp, toCsv, type LogData } from './log'
-import { ChannelPanel, LoggerPanel } from './Panels'
+import { ChannelPanel, LoggerPanel, type ReadingSource } from './Panels'
 import { decodeSettings, fahrenheit, type Settings, type Status } from './protocol'
 import { SetupDialog } from './SetupDialog'
 import { fmtClock, useUnit } from './units'
@@ -28,6 +28,14 @@ function saveFile(name: string, text: string) {
   const a = Object.assign(document.createElement('a'), { href: url, download: name })
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+/** The serial of the logger used last, so it can be picked automatically among several. */
+function lastSerial(): string | null {
+  try { return localStorage.getItem('lastSerial') } catch { return null }
+}
+function rememberSerial(serial: string) {
+  try { localStorage.setItem('lastSerial', serial) } catch { /* private mode etc. */ }
 }
 
 const safeName = (s: string) => s.replace(/[^\w.-]+/g, '_').replace(/^_+|_+$/g, '') || 'log'
@@ -62,6 +70,13 @@ export function App() {
   const liveCount = useRef(0)
   const fileInput = useRef<HTMLInputElement>(null)
   const busyRef = useRef(false)
+  /** Set by Disconnect: don't auto-connect again until the user picks a logger. */
+  const manualDisconnect = useRef(false)
+  /** Plugged-in loggers this site may use, other than the connected one. */
+  const [available, setAvailable] = useState<LoggerSummary[]>([])
+  const deviceRef = useRef<LoggerDevice | null>(null)
+  deviceRef.current = device
+  const scanning = useRef<Promise<LoggerSummary[]> | null>(null)
   const now = useNow(status?.state === 'logging')
 
   const refresh = useCallback(async (d: LoggerDevice | null = device) => {
@@ -73,29 +88,61 @@ export function App() {
     }
   }, [device])
 
+  /** Connects to `hid`, closing any other logger first. */
   const attach = useCallback(async (hid: HIDDevice) => {
     try {
+      const prev = deviceRef.current
+      if (prev && prev.hid !== hid) {
+        setDevice(null)
+        setStatus(null)
+        await prev.close().catch(() => undefined)
+      }
       const d = new LoggerDevice(hid)
       await d.open()
+      const s = await d.readStatus()
+      manualDisconnect.current = false
+      setLive(false)
       setDevice(d)
+      setStatus(s)
       setError(null)
-      setStatus(await d.readStatus())
+      rememberSerial(s.serial)
+      setAvailable((list) => list.filter((l) => l.hid !== hid))
     } catch (e) {
       setError(`Couldn't open the logger: ${e instanceof Error ? e.message : e}`)
     }
   }, [])
 
-  // Reconnect to a logger this site already has permission for, and follow plug/unplug.
+  /** Lists allowed, plugged-in loggers (except the connected one) with their names and serials. */
+  const scan = useCallback((): Promise<LoggerSummary[]> => {
+    if (!supported) return Promise.resolve([])
+    scanning.current ??= (async () => {
+      const current = deviceRef.current?.hid
+      const hids = (await grantedLoggers()).filter((h) => h !== current)
+      const list = (await Promise.all(hids.map(describeLogger))).filter((l): l is LoggerSummary => l !== null)
+      setAvailable(list)
+      return list
+    })().finally(() => { scanning.current = null })
+    return scanning.current
+  }, [])
+
+  /** Connects on its own only when the choice is obvious: one logger, or the one used last. */
+  const autoConnect = useCallback((list: LoggerSummary[]) => {
+    if (deviceRef.current || manualDisconnect.current) return
+    const pick = list.length === 1 ? list[0] : list.find((l) => l.serial === lastSerial())
+    if (pick) attach(pick.hid)
+  }, [attach])
+
+  // Find loggers on load, and follow plug/unplug. Plugging one in never replaces an active connection.
   useEffect(() => {
     if (!supported) return
-    grantedLoggers().then(([d]) => d && attach(d))
-    const onConnect = (e: HIDConnectionEvent) => attach(e.device)
+    scan().then(autoConnect)
+    const onConnect = () => { scan().then(autoConnect) }
     const onDisconnect = (e: HIDConnectionEvent) => {
-      setDevice((cur) => {
-        if (cur?.hid !== e.device) return cur
+      if (deviceRef.current?.hid === e.device) {
+        setDevice(null)
         setStatus(null)
-        return null
-      })
+      }
+      scan()
     }
     navigator.hid.addEventListener('connect', onConnect)
     navigator.hid.addEventListener('disconnect', onDisconnect)
@@ -103,7 +150,7 @@ export function App() {
       navigator.hid.removeEventListener('connect', onConnect)
       navigator.hid.removeEventListener('disconnect', onDisconnect)
     }
-  }, [attach])
+  }, [scan, autoConnect])
 
   // Keep status fresh while connected (the vendor software polls too); faster while live.
   const tick = useRef<() => Promise<void>>(async () => {})
@@ -133,10 +180,25 @@ export function App() {
     }
   }
 
-  const connect = () => run('Connecting', async () => {
+  const connectTo = (hid: HIDDevice) => run('Connecting', () => attach(hid))
+
+  /** Chrome's picker: allow a new logger (or pick among plugged-in ones). */
+  const addLogger = () => run('Connecting', async () => {
     const hid = await requestLogger()
     if (hid) await attach(hid)
+    await scan()
   })
+
+  const disconnect = async () => {
+    const d = device
+    if (!d) return
+    manualDisconnect.current = true
+    setLive(false)
+    setDevice(null)
+    setStatus(null)
+    try { await d.close() } catch { /* already gone */ }
+    await scan()
+  }
 
   /** Downloads the whole log into the chart; returns the status it was taken at. */
   async function fetchLog(title: (s: Status) => string) {
@@ -229,6 +291,16 @@ export function App() {
     return log ? recent(log, i, 1)[0] ?? null : null
   }
   const lastTime = log?.times.length ? new Date(log.times[log.times.length - 1] * 1000) : null
+  /** What the big readouts show: the logger's newest logged reading, or the last one in an opened file. */
+  const source: ReadingSource | null = status
+    ? {
+        kind: status.state === 'logging' ? 'logging' : 'recorded',
+        // The logger doesn't timestamp its latest value; estimate it from the start time and count.
+        at: status.actualStart && status.readingCount > 0
+          ? new Date(status.actualStart.getTime() + (status.readingCount - 1) * status.intervalSeconds * 1000)
+          : null,
+      }
+    : log ? { kind: 'file', at: lastTime } : null
 
   return (
     <div class="page">
@@ -243,6 +315,7 @@ export function App() {
         </div>
         <div class="header-actions">
           <span class={`led ${connected ? 'ok' : 'off'}`}>{connected ? 'USB connected' : 'No USB'}</span>
+          {connected && <button class="small" disabled={!!busy} onClick={disconnect}>Disconnect</button>}
           <div class="segmented" role="group" aria-label="Temperature unit">
             {(['F', 'C'] as const).map((u) => (
               <button key={u} aria-pressed={unit === u} onClick={() => setUnit(u)}>°{u}</button>
@@ -259,10 +332,11 @@ export function App() {
 
       <div class="row3">
         {[0, 1].map((i) => (
-          <ChannelPanel key={i} index={i} unit={unit} enabled={i < channelCount} connected={connected} latestF={latest(i)}
+          <ChannelPanel key={i} index={i} unit={unit} enabled={i < channelCount} connected={connected} latestF={latest(i)} source={source} now={now}
             log={log} alarms={alarms.filter((a) => a.probe === i)} />
         ))}
-        <LoggerPanel status={status} now={now} supported={supported} busy={!!busy} onConnect={connect} />
+        <LoggerPanel status={status} now={now} supported={supported} busy={!!busy}
+          available={available} onConnectTo={connectTo} onAdd={addLogger} />
       </div>
 
       <section class="panel trend" aria-label="Trend">

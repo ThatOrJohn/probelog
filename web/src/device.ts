@@ -17,21 +17,45 @@ export async function grantedLoggers(): Promise<HIDDevice[]> {
   return (await navigator.hid.getDevices()).filter((d) => d.vendorId === VENDOR_ID && d.productId === PRODUCT_ID)
 }
 
+export interface LoggerSummary { hid: HIDDevice; name: string; serial: string; state: string }
+
+/**
+ * Reads a logger's name, serial and state without keeping it open. WebHID doesn't expose
+ * serial numbers, and identical models look the same in Chrome's picker, so this is how
+ * the app tells several loggers apart. Read-only.
+ */
+export async function describeLogger(hid: HIDDevice): Promise<LoggerSummary | null> {
+  const wasOpen = hid.opened
+  const d = new LoggerDevice(hid)
+  try {
+    await d.open()
+    const s = await d.readStatus()
+    return { hid, name: s.name, serial: s.serial, state: s.state }
+  } catch {
+    return null
+  } finally {
+    if (!wasOpen) await d.close().catch(() => undefined)
+    else d.detach()
+  }
+}
+
 export class LoggerDevice {
   private reports: Uint8Array[] = []
   private wake: (() => void) | null = null
   private busy: Promise<unknown> = Promise.resolve()
 
+  private readonly onReport = (e: HIDInputReportEvent) => {
+    // WebHID strips the report ID; put it back so offsets match PROTOCOL.md.
+    const data = new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength)
+    const r = new Uint8Array(data.length + 1)
+    r[0] = e.reportId
+    r.set(data, 1)
+    this.reports.push(r)
+    this.wake?.()
+  }
+
   constructor(readonly hid: HIDDevice) {
-    hid.addEventListener('inputreport', (e) => {
-      // WebHID strips the report ID; put it back so offsets match PROTOCOL.md.
-      const data = new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength)
-      const r = new Uint8Array(data.length + 1)
-      r[0] = e.reportId
-      r.set(data, 1)
-      this.reports.push(r)
-      this.wake?.()
-    })
+    hid.addEventListener('inputreport', this.onReport)
   }
 
   async open() {
@@ -103,6 +127,17 @@ export class LoggerDevice {
       const after = parseStatus(await this.statusRaw())
       if (settings.start.kind === 'software') await this.send(8, [...ETI, 0x10])
       return after
+    })
+  }
+
+  /** Stops listening without closing the device (another LoggerDevice is using it). */
+  detach() { this.hid.removeEventListener('inputreport', this.onReport) }
+
+  /** Closes the connection once any request in progress has finished. */
+  close() {
+    return this.exclusive(async () => {
+      this.hid.removeEventListener('inputreport', this.onReport)
+      if (this.hid.opened) await this.hid.close()
     })
   }
 

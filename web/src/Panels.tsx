@@ -1,5 +1,6 @@
 import type { AlarmLine } from './Chart'
 import { change, recent, stamp, stats, type LogData } from './log'
+import type { LoggerSummary } from './device'
 import { CAPACITY, type Status } from './protocol'
 import { fmtClock, fmtDuration, toUnit, type Unit } from './units'
 
@@ -17,13 +18,31 @@ function Sparkline({ values, probe }: { values: number[]; probe: number }) {
 }
 
 /** One probe's big readout, alarm limits, recent trend and stats. */
-export function ChannelPanel({ index, enabled, connected, latestF, log, alarms, unit }: {
+/** Where the big readout's value came from, so a stopped logger's last value isn't mistaken for a live one. */
+export interface ReadingSource {
+  kind: 'logging' | 'recorded' | 'file'
+  /** When the value was taken, by the logger's clock (null if unknown). */
+  at: Date | null
+}
+
+function sourceCaption(src: ReadingSource, now: number) {
+  if (src.kind === 'logging') {
+    const ago = src.at ? Math.max(0, Math.round((now - src.at.getTime()) / 1000)) : null
+    return `Latest reading${ago == null ? '' : ` · ${ago < 90 ? `${ago} s` : fmtDuration(ago)} ago`}`
+  }
+  const when = src.at ? ` · ${stamp(src.at)}` : ''
+  return src.kind === 'file' ? `Last in file${when}` : `Last recorded${when} · not logging`
+}
+
+export function ChannelPanel({ index, enabled, connected, latestF, source, now, log, alarms, unit }: {
   index: number
   enabled: boolean
   /** A logger is connected (so "no alarm" is known, not just unknown). */
   connected: boolean
   /** Newest reading in °F (null = none / probe unplugged). */
   latestF: number | null
+  source: ReadingSource | null
+  now: number
   log: LogData | null
   alarms: AlarmLine[]
   unit: Unit
@@ -46,10 +65,11 @@ export function ChannelPanel({ index, enabled, connected, latestF, log, alarms, 
           ))}
         </span>
       </div>
-      <div class={`readout ${enabled && latestF != null ? cls : 'off'}`} aria-live="off">
+      <div class={`readout ${enabled && latestF != null ? cls : 'off'} ${source && source.kind !== 'logging' ? 'stale' : ''}`} aria-live="off">
         <span class="value">{enabled && latestF != null ? num(latestF, unit) : '--.--'}</span>
         <span class="unit">°{unit}</span>
       </div>
+      <p class="source">{enabled && latestF != null && source ? sourceCaption(source, now) : enabled ? 'No reading' : 'Probe disabled'}</p>
       {enabled && log ? <Sparkline values={recent(log, index, 60)} probe={index} /> : <div class="spark" />}
       <dl class="stats4">
         <div><dt>MIN</dt><dd>{num(s?.min, unit)}</dd></div>
@@ -72,23 +92,44 @@ function fmtDrift(seconds: number) {
 }
 
 /** Logger state, timing and memory — or a connect prompt. */
-export function LoggerPanel({ status, now, supported, busy, onConnect }: {
+export function LoggerPanel({ status, now, supported, busy, available, onConnectTo, onAdd }: {
   status: Status | null
   now: number
   supported: boolean
   busy: boolean
-  onConnect: () => void
+  /** Plugged-in loggers this site may use (when none is connected). */
+  available: LoggerSummary[]
+  onConnectTo: (hid: HIDDevice) => void
+  /** Opens Chrome's device picker. */
+  onAdd: () => void
 }) {
   if (!status) {
     return (
       <section class="panel logger" aria-label="Logger">
         <div class="panel-head"><span class="label" style={{ color: 'var(--bright)' }}>LOGGER</span><span class="led off">NOT CONNECTED</span></div>
-        <div class="connect">
-          <p>{supported
-            ? 'Plug the logger into a USB port, then connect to it. Chrome will ask which device to use.'
-            : 'This browser can’t talk to USB devices. Use Chrome, Edge, Brave or Arc on a computer.'}</p>
-          <button class="primary" disabled={!supported || busy} onClick={onConnect}>Connect logger</button>
-        </div>
+        {!supported ? (
+          <div class="connect"><p>This browser can’t talk to USB devices. Use Chrome, Edge, Brave or Arc on a computer.</p></div>
+        ) : available.length ? (
+          <div class="connect">
+            <ul class="logger-list" aria-label="Available loggers">
+              {available.map((l) => (
+                <li key={l.serial}>
+                  <div>
+                    <div class="logger-name">{l.name || 'Unnamed logger'}</div>
+                    <div class="logger-meta">SN {l.serial} · {l.state}</div>
+                  </div>
+                  <button class="small" disabled={busy} onClick={() => onConnectTo(l.hid)}>Connect</button>
+                </li>
+              ))}
+            </ul>
+            <button class="small" disabled={busy} onClick={onAdd}>Add another logger…</button>
+          </div>
+        ) : (
+          <div class="connect">
+            <p>Plug the logger into a USB port, then connect to it. Chrome will ask which device to use.</p>
+            <button class="primary" disabled={busy} onClick={onAdd}>Connect logger</button>
+          </div>
+        )}
       </section>
     )
   }
