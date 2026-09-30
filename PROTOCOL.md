@@ -93,7 +93,7 @@ The write is the post-erase status block with these changes (reproduced byte-for
 | 0x23 | Mode (written): low nibble start (`1` manually — by software or the logger's button, `2` button press + delay, `4` date/time), high nibble stop (`0` by software, `2` when full, `4` date/time, `8` after N readings). Status reads back `00` idle/stopped, or `0x08 | start mode` while armed AND while logging (use actual start 0x33 + reading count to tell apart) |
 | 0x26 | Always written `14` (status reads `0e`) |
 | 0x27, 0x2d | BCD start / stop date-time. The vendor software always fills both: unused ones get the other date, or a default |
-| 0x39 | Button start delay, seconds (default `3b` = 59). The vendor UI takes hours/minutes/seconds, so this may be wider than one byte — only values < 256 seen. Written even when unused |
+| 0x39 | LE u16 button-start delay, seconds (vendor UI: hours/minutes/seconds; 1 h 2 min 3 s → `8b 0e` = 3723). Default 59. Written even when unused |
 | 0x44 | LE u16 interval, seconds (factory default 6) |
 | 0x46, 0x48 | Probe 1 over / under limit, LE u16 raw. Disabled alarms keep a limit (default 1372 °F / −100 °F) |
 | 0x4f, 0x51 | Probe 2 over / under limit |
@@ -105,7 +105,7 @@ The write is the post-erase status block with these changes (reproduced byte-for
 
 Commands (report 8): `08 'E' 'T' 'I' 10` = start now, `08 'E' 'T' 'I' 20` = stop.
 
-Not yet captured: a button delay of 256 s or more (to learn the field's width).
+Every setting the vendor software offers has been captured and decoded.
 
 ## Export (`.msdb`)
 

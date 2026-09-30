@@ -12,7 +12,7 @@ const hex = (s: string) => Uint8Array.from(s.match(/../g)!.map((h) => parseInt(h
 
 describe('settings encoding', () => {
   it('reproduces every captured vendor write byte for byte', () => {
-    expect(fixtures).toHaveLength(11)
+    expect(fixtures).toHaveLength(12)
     for (const f of fixtures) {
       const base = hex(f.statusAfterErase)
       const studio = hex(f.studioWrite)
@@ -22,7 +22,7 @@ describe('settings encoding', () => {
       if (settings.start.kind !== 'at' && settings.stop.kind !== 'at') ours.set(studio.subarray(OFFSETS.startDate, OFFSETS.startDate + 6), OFFSETS.startDate)
       if (settings.stop.kind !== 'at') ours.set(studio.subarray(OFFSETS.stopDate, OFFSETS.stopDate + 6), OFFSETS.stopDate)
       // Likewise its button-delay box, which only matters for a button start.
-      if (settings.start.kind !== 'button') ours[OFFSETS.buttonDelay] = studio[OFFSETS.buttonDelay]
+      if (settings.start.kind !== 'button') ours.set(studio.subarray(OFFSETS.buttonDelay, OFFSETS.buttonDelay + 2), OFFSETS.buttonDelay)
       const diff = [...studio].flatMap((v, i) => (ours[i] === v ? [] : [`${i.toString(16)}:${ours[i].toString(16)}≠${v.toString(16)}`]))
       expect(diff, f.source).toEqual([])
     }
@@ -49,6 +49,9 @@ describe('settings encoding', () => {
     expect(w[9].probeCount).toBe(1)
     expect(w[10].probes[0].low).toEqual({ enabled: true, raw: rawFor(22) })
     expect(w[10].probes[0].high.enabled).toBe(false)
+
+    // tds_save4: button start after 1 h 2 min 3 s — the delay is a 16-bit count of seconds.
+    expect(w[11].start).toEqual({ kind: 'button', delaySeconds: 3723 })
   })
 })
 

@@ -160,7 +160,7 @@ export function encodeSettings(s: Settings, base: Uint8Array, now: Date): Uint8A
   b[0x26] = 0x14
 
   let startNibble = 1
-  let delay = b[O.buttonDelay] === 0 ? 59 : b[O.buttonDelay]
+  let delay = le16(b, O.buttonDelay) || 59
   if (s.start.kind === 'button') { startNibble = 2; delay = s.start.delaySeconds }
   if (s.start.kind === 'at') startNibble = 4
   let stopNibble = 0
@@ -174,7 +174,7 @@ export function encodeSettings(s: Settings, base: Uint8Array, now: Date): Uint8A
   const startDate = s.start.kind === 'at' ? s.start.date : stopDate ?? now
   putBcdDate(b, O.startDate, startDate)
   putBcdDate(b, O.stopDate, stopDate ?? startDate)
-  b[O.buttonDelay] = Math.max(0, Math.min(255, delay))
+  put16(b, O.buttonDelay, Math.max(0, Math.min(0xffff, delay)))
 
   put16(b, O.interval, s.intervalSeconds)
   s.probes.forEach((p, i) => {
@@ -205,7 +205,7 @@ export function decodeSettings(b: Uint8Array): Settings {
     intervalSeconds: le16(b, O.interval),
     probeCount: b[O.probeCount],
     start:
-      startNibble === 2 ? { kind: 'button', delaySeconds: b[O.buttonDelay] }
+      startNibble === 2 ? { kind: 'button', delaySeconds: le16(b, O.buttonDelay) }
       : startNibble === 4 ? { kind: 'at', date: bcdDate(b, O.startDate) ?? new Date(0) }
       : { kind: 'manual' },
     stop:

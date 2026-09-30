@@ -32,7 +32,9 @@ export function SetupDialog(props: {
   const [intervalUnit, setIntervalUnit] = useState<keyof typeof INTERVAL_UNITS>(initialUnit)
   const [probeCount, setProbeCount] = useState(current.probeCount === 1 ? 1 : 2)
   const [startKind, setStartKind] = useState<StartKind>('button')
-  const [delay, setDelay] = useState('0')
+  /** Button-start delay as hours, minutes, seconds (the logger stores seconds, up to 65535). */
+  const [delay, setDelay] = useState({ h: '0', m: '0', s: '0' })
+  const delaySeconds = Number(delay.h) * 3600 + Number(delay.m) * 60 + Number(delay.s)
   const [startAt, setStartAt] = useState(localInput(new Date(Date.now() + 3600_000)))
   const [stopKind, setStopKind] = useState<StopKind>('software')
   const [stopAt, setStopAt] = useState(localInput(new Date(Date.now() + 86400_000)))
@@ -56,10 +58,10 @@ export function SetupDialog(props: {
     const start: Settings['start'] =
       startKind === 'software' ? { kind: 'software' }
       : startKind === 'manual' ? { kind: 'manual' }
-      : startKind === 'button' ? { kind: 'button', delaySeconds: Number(delay) }
+      : startKind === 'button' ? { kind: 'button', delaySeconds }
       : { kind: 'at', date: new Date(startAt) }
-    if (start.kind === 'button' && !(Number.isInteger(start.delaySeconds) && start.delaySeconds >= 0 && start.delaySeconds <= 255))
-      throw new Error('Button delay must be 0–255 seconds.')
+    if (start.kind === 'button' && !(Number.isInteger(start.delaySeconds) && start.delaySeconds >= 0 && start.delaySeconds <= 0xffff))
+      throw new Error('Button delay must be whole numbers, up to 18 h 12 min 15 s.')
     if (start.kind === 'at' && !(start.date.getTime() > Date.now())) throw new Error('Start time must be in the future.')
     const n = Number(stopCount)
     const stop: Settings['stop'] =
@@ -139,8 +141,13 @@ export function SetupDialog(props: {
           <label><input type="radio" checked={startKind === 'manual'} onChange={() => setStartKind('manual')} /> Later — with Start in this app or the logger's button</label>
           <label class="row">
             <input type="radio" checked={startKind === 'button'} onChange={() => setStartKind('button')} /> On the logger's button, after a delay of
-            <input type="number" min="0" max="255" class="tiny" value={delay} disabled={startKind !== 'button'}
-              onInput={(e) => setDelay(e.currentTarget.value)} /> s
+            {(['h', 'm', 's'] as const).map((k) => (
+              <span class="row" key={k}>
+                <input type="number" min="0" max={k === 'h' ? 18 : 59} class="tiny" value={delay[k]} disabled={startKind !== 'button'}
+                  aria-label={{ h: 'Delay hours', m: 'Delay minutes', s: 'Delay seconds' }[k]}
+                  onInput={(e) => setDelay({ ...delay, [k]: e.currentTarget.value })} /> {k}
+              </span>
+            ))}
           </label>
           <label class="row">
             <input type="radio" checked={startKind === 'at'} onChange={() => setStartKind('at')} /> At

@@ -54,7 +54,7 @@ func parseSettings(_ args: [String], current: Settings) throws -> Settings {
         else if v == "manual" { s.start = .manual }
         else if v.hasPrefix("button") {
             let d = v.split(separator: ":").dropFirst().first.flatMap { Int($0) } ?? 0
-            guard (0...255).contains(d) else { throw Bad(description: "button delay must be 0–255 s") }
+            guard (0...65535).contains(d) else { throw Bad(description: "button delay must be 0–65535 s (about 18 h)") }
             s.start = .button(delaySeconds: d)
         } else if let d = stamp.date(from: v) { s.start = .at(d) }
         else { throw Bad(description: "bad --start") }

@@ -20,7 +20,7 @@ final class SettingsTests: XCTestCase {
     /// Rebuilding every captured Studio save from its decoded settings must give identical bytes.
     func testReproducesStudioWrites() throws {
         let fx = try fixtures()
-        XCTAssertEqual(fx.count, 11)
+        XCTAssertEqual(fx.count, 12)
         for f in fx {
             let base = bytes(f.statusAfterErase), studio = bytes(f.studioWrite)
             let settings = Settings(block: studio)
@@ -32,7 +32,7 @@ final class SettingsTests: XCTestCase {
             if case .at = settings.stop { stopIsAt = true }
             if !startIsAt && !stopIsAt { for o in Settings.startDate..<Settings.startDate + 6 { ours[o] = studio[o] } }
             if !stopIsAt { for o in Settings.stopDate..<Settings.stopDate + 6 { ours[o] = studio[o] } }
-            if !isButton { ours[Settings.buttonDelay] = studio[Settings.buttonDelay] }
+            if !isButton { for o in Settings.buttonDelay..<Settings.buttonDelay + 2 { ours[o] = studio[o] } }
             let diff = (0..<studio.count).filter { ours[$0] != studio[$0] }.map { String(format: "%02x:%02x≠%02x", $0, ours[$0], studio[$0]) }
             XCTAssertEqual(diff, [], f.source)
         }
@@ -63,5 +63,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(w[8].stop, .at(Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 30, hour: 13, minute: 49))!))
         XCTAssertEqual(w[9].probeCount, 1)
         XCTAssertEqual(w[10].probes[0].low, .init(enabled: true, raw: rawFor(fahrenheit: 22)))
+        // tds_save4: button start after 1 h 2 min 3 s — the delay is a 16-bit count of seconds.
+        XCTAssertEqual(w[11].start, .button(delaySeconds: 3723))
     }
 }

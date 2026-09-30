@@ -66,7 +66,7 @@ public struct Settings: Equatable {
         b[0x26] = 0x14
 
         let startNibble: UInt8
-        var startDate: Date?, delay = Int(b[Settings.buttonDelay]) == 0 ? 59 : Int(b[Settings.buttonDelay])
+        var startDate: Date?, delay = le16(b, Settings.buttonDelay) == 0 ? 59 : le16(b, Settings.buttonDelay)
         switch start {
         case .software, .manual: startNibble = 0x1
         case .button(let d): startNibble = 0x2; delay = d
@@ -85,7 +85,7 @@ public struct Settings: Equatable {
         let start = startDate ?? stopDate ?? now
         put(bcd: start, into: &b, at: Settings.startDate)
         put(bcd: stopDate ?? start, into: &b, at: Settings.stopDate)
-        b[Settings.buttonDelay] = UInt8(clamping: delay)
+        put16(min(max(delay, 0), 0xffff), into: &b, at: Settings.buttonDelay)
 
         put16(intervalSeconds, into: &b, at: Settings.interval)
         for (p, probe) in probes.prefix(2).enumerated() {
@@ -106,7 +106,7 @@ public struct Settings: Equatable {
         probeCount = Int(b[Settings.probeCountOffset])
         let stopAfterValue = (0..<4).reduce(0) { $0 | Int(b[Settings.stopAfter + $1]) << (8 * $1) }
         switch b[Settings.mode] & 0x0f {
-        case 0x2: start = .button(delaySeconds: Int(b[Settings.buttonDelay]))
+        case 0x2: start = .button(delaySeconds: le16(b, Settings.buttonDelay))
         case 0x4: start = .at(bcdDate(b[Settings.startDate..<Settings.startDate + 6]) ?? .distantPast)
         default: start = .manual
         }
