@@ -1,0 +1,12 @@
+# Build output
+.build/
+.swiftpm/
+web/node_modules/
+web/dist/
+
+# Raw USB captures and vendor-software exports (personal data; not needed to build or test)
+windows-data/
+
+# Local tooling
+.claude/
+.DS_Store
