@@ -109,7 +109,7 @@ function fmtDrift(seconds: number) {
 }
 
 /** Logger state, timing and memory — or a connect prompt. */
-export function LoggerPanel({ status, now, supported, busy, available, onConnectTo, onAdd }: {
+export function LoggerPanel({ status, now, supported, busy, available, onConnectTo, onAdd, onDemo }: {
   status: Status | null
   now: number
   supported: boolean
@@ -119,13 +119,18 @@ export function LoggerPanel({ status, now, supported, busy, available, onConnect
   onConnectTo: (hid: HIDDevice) => void
   /** Opens Chrome's device picker. */
   onAdd: () => void
+  /** Starts the simulated logger. */
+  onDemo: () => void
 }) {
   if (!status) {
     return (
       <section class="panel logger" aria-label="Logger">
         <div class="panel-head"><span class="label" style={{ color: 'var(--bright)' }}>LOGGER</span><span class="led off">NOT CONNECTED</span></div>
         {!supported ? (
-          <div class="connect"><p>This browser can’t talk to USB devices. Use Chrome, Edge, Brave or Arc on a computer.</p></div>
+          <div class="connect">
+            <p>This browser can’t talk to USB devices. Use Chrome, Edge, Brave or Arc on a computer — or look around with a simulated logger.</p>
+            <button class="primary" disabled={busy} onClick={onDemo}>Try the demo</button>
+          </div>
         ) : available.length ? (
           <div class="connect">
             <ul class="logger-list" aria-label="Available loggers">
@@ -139,12 +144,18 @@ export function LoggerPanel({ status, now, supported, busy, available, onConnect
                 </li>
               ))}
             </ul>
-            <button class="small" disabled={busy} onClick={onAdd}>Add another logger…</button>
+            <div class="row">
+              <button class="small" disabled={busy} onClick={onAdd}>Add another logger…</button>
+              <button class="small" disabled={busy} onClick={onDemo}>Try the demo</button>
+            </div>
           </div>
         ) : (
           <div class="connect">
             <p>Plug the logger into a USB port, then connect to it. Chrome will ask which device to use.</p>
-            <button class="primary" disabled={busy} onClick={onAdd}>Connect logger</button>
+            <div class="row">
+              <button class="primary" disabled={busy} onClick={onAdd}>Connect logger</button>
+              <button disabled={busy} onClick={onDemo}>Try the demo</button>
+            </div>
           </div>
         )}
       </section>
@@ -152,7 +163,8 @@ export function LoggerPanel({ status, now, supported, busy, available, onConnect
   }
   const { state, intervalSeconds: iv, readingCount: n, actualStart } = status
   const elapsed = state === 'logging' && actualStart ? (now - actualStart.getTime()) / 1000 : n > 0 ? (n - 1) * iv : null
-  const drift = status.clock ? (status.clock.getTime() - now) / 1000 : null
+  // The logger's clock has whole-second resolution, so compare against when the status was read.
+  const drift = status.clock ? Math.round((status.clock.getTime() + 500 - status.readAt) / 1000) : null
   const lit = n > 0 ? Math.max(1, Math.round((n / CAPACITY) * 40)) : 0
   return (
     <section class="panel logger" aria-label="Logger">

@@ -10,7 +10,7 @@ export const CAPACITY = 8000
 export const INVALID_RAW = 0xffff
 
 export const le16 = (b: Uint8Array, i: number) => b[i] | (b[i + 1] << 8)
-const put16 = (b: Uint8Array, i: number, v: number) => { b[i] = v & 0xff; b[i + 1] = (v >> 8) & 0xff }
+export const put16 = (b: Uint8Array, i: number, v: number) => { b[i] = v & 0xff; b[i + 1] = (v >> 8) & 0xff }
 
 /** Raw reading → °F: 0.05 °F per count. Matches the vendor software's stored values exactly. */
 export const fahrenheit = (raw: number) => (raw - 10000) / 20
@@ -28,7 +28,7 @@ export function bcdDate(b: Uint8Array, o: number): Date | null {
   return new Date(2000 + bcd(v[2]), bcd(v[0]) - 1, bcd(v[1]), bcd(v[3]), bcd(v[4]), bcd(v[5]))
 }
 
-function putBcdDate(b: Uint8Array, o: number, d: Date) {
+export function putBcdDate(b: Uint8Array, o: number, d: Date) {
   const parts = [d.getMonth() + 1, d.getDate(), d.getFullYear() % 100, d.getHours(), d.getMinutes(), d.getSeconds()]
   parts.forEach((v, i) => (b[o + i] = toBcd(v)))
 }
@@ -53,6 +53,8 @@ export interface Status {
   /** Most recent logged raw reading per channel (null when none). */
   latestRaw: (number | null)[]
   raw: Uint8Array
+  /** When this status was read (computer time, ms), for comparing against `clock`. */
+  readAt: number
 }
 
 export function parseStatus(r: Uint8Array): Status {
@@ -81,6 +83,7 @@ export function parseStatus(r: Uint8Array): Status {
       return v === INVALID_RAW ? null : v
     }),
     raw: r,
+    readAt: Date.now(),
   }
 }
 

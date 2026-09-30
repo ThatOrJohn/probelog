@@ -4,6 +4,7 @@ import { LoggerDevice, describeLogger, grantedLoggers, requestLogger, webHidSupp
 import { appendLatest, beyond, fromCsv, logFromReadings, recent, stamp, toCsv, type LogData } from './log'
 import { ChannelPanel, LoggerPanel, type ReadingSource } from './Panels'
 import { decodeSettings, fahrenheit, type Settings, type Status } from './protocol'
+import { createDemoLogger, isDemo } from './demo'
 import { SetupDialog } from './SetupDialog'
 import { fmtClock, toUnit, useUnit } from './units'
 
@@ -105,7 +106,7 @@ export function App() {
       setDevice(d)
       setStatus(s)
       setError(null)
-      rememberSerial(s.serial)
+      if (!isDemo(hid)) rememberSerial(s.serial)
       setAvailable((list) => list.filter((l) => l.hid !== hid))
     } catch (e) {
       setError(`Couldn't open the logger: ${e instanceof Error ? e.message : e}`)
@@ -132,8 +133,16 @@ export function App() {
     if (pick) attach(pick.hid)
   }, [attach])
 
+  /** The simulated logger (`?demo` in the URL). Never auto-replaced by a real one. */
+  const startDemo = useCallback(async () => {
+    manualDisconnect.current = true // keep real loggers from auto-connecting over the demo
+    await attach(createDemoLogger())
+    if (!new URLSearchParams(location.search).has('demo')) history.replaceState(null, '', '?demo')
+  }, [attach])
+
   // Find loggers on load, and follow plug/unplug. Plugging one in never replaces an active connection.
   useEffect(() => {
+    if (new URLSearchParams(location.search).has('demo')) startDemo()
     if (!supported) return
     scan().then(autoConnect)
     const onConnect = () => { scan().then(autoConnect) }
@@ -150,7 +159,7 @@ export function App() {
       navigator.hid.removeEventListener('connect', onConnect)
       navigator.hid.removeEventListener('disconnect', onDisconnect)
     }
-  }, [scan, autoConnect])
+  }, [scan, autoConnect, startDemo])
 
   // Keep status fresh while connected (the vendor software polls too); faster while live.
   const tick = useRef<() => Promise<void>>(async () => {})
@@ -192,6 +201,11 @@ export function App() {
   const disconnect = async () => {
     const d = device
     if (!d) return
+    if (isDemo(d.hid)) {
+      // Leaving the demo: drop its data and the ?demo URL too.
+      setLog(null)
+      history.replaceState(null, '', location.pathname)
+    }
     manualDisconnect.current = true
     setLive(false)
     setDevice(null)
@@ -221,6 +235,16 @@ export function App() {
     setNotice(null)
     setLive(true)
   })
+
+  // The demo opens straight into live view: a moving chart shows what the app does.
+  const demoStarted = useRef(false)
+  useEffect(() => {
+    if (!device || !isDemo(device.hid)) { demoStarted.current = false; return }
+    if (!demoStarted.current && !busy) {
+      demoStarted.current = true
+      startLive()
+    }
+  }, [device, busy])
 
   /** One live poll: append the new reading, or re-download if we fell behind. */
   async function liveTick() {
@@ -280,6 +304,7 @@ export function App() {
   }
 
   const connected = !!device && !!status
+  const demo = connected && isDemo(device!.hid)
   const downloaded = !!status && downloadedMark === `${status.serial}:${status.readingCount}`
   const alarms = status ? alarmLines(status) : log?.alarms ?? []
   const channelCount = status?.channelCount ?? log?.probes.length ?? 2
@@ -319,13 +344,13 @@ export function App() {
           <h1 class="wordmark">PROBELOG</h1>
           <span class="divider" aria-hidden="true" />
           <span class="device-line">
-            {status ? `ThermaData logger · ${status.channelCount} ch · SN ${status.serial}`
+            {status ? `${demo ? 'Demo logger (simulated)' : 'ThermaData logger'} · ${status.channelCount} ch · SN ${status.serial}`
               : log ? `File · ${log.title}` : 'No logger connected'}
           </span>
         </div>
         <div class="header-actions">
-          <span class={`led ${connected ? 'ok' : 'off'}`}>{connected ? 'USB connected' : 'No USB'}</span>
-          {connected && <button class="small" disabled={!!busy} onClick={disconnect}>Disconnect</button>}
+          <span class={`led ${demo ? 'warn' : connected ? 'ok' : 'off'}`}>{demo ? 'Demo' : connected ? 'USB connected' : 'No USB'}</span>
+          {connected && <button class="small" disabled={!!busy} onClick={disconnect}>{demo ? 'Exit demo' : 'Disconnect'}</button>}
           <div class="segmented" role="group" aria-label="Temperature unit">
             {(['F', 'C'] as const).map((u) => (
               <button key={u} aria-pressed={unit === u} onClick={() => setUnit(u)}>°{u}</button>
@@ -346,7 +371,7 @@ export function App() {
             log={log} alarms={alarms.filter((a) => a.probe === i)} />
         ))}
         <LoggerPanel status={status} now={now} supported={supported} busy={!!busy}
-          available={available} onConnectTo={connectTo} onAdd={addLogger} />
+          available={available} onConnectTo={connectTo} onAdd={addLogger} onDemo={() => run('Starting demo', startDemo)} />
       </div>
 
       <section class="panel trend" aria-label="Trend">
@@ -396,7 +421,8 @@ export function App() {
       </div>
 
       <footer>
-        Not affiliated with or endorsed by ThermoWorks or Electronic Temperature Instruments. No warranty — verify readings against a reference.
+        <p>Not affiliated with or endorsed by ThermoWorks or Electronic Temperature Instruments. No warranty — verify readings against a reference.</p>
+        <p><a href="https://github.com/ThatOrJohn/probelog">Source on GitHub</a> · MIT license</p>
       </footer>
 
       {setupOpen && status && device && (
