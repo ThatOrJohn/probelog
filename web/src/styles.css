@@ -33,10 +33,10 @@ body {
   background-color: var(--bg);
   background-image:
     url('./lab-icons.svg'),
-    linear-gradient(rgb(255 255 255 / 0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 0.05) 1px, transparent 1px),
-    linear-gradient(rgb(255 255 255 / 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 0.028) 1px, transparent 1px);
+    linear-gradient(rgb(255 255 255 / 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.03) 1px, transparent 1px),
+    linear-gradient(rgb(255 255 255 / 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.018) 1px, transparent 1px);
   background-size: 264px 264px, 120px 120px, 120px 120px, 24px 24px, 24px 24px;
 }
 @media print { body { background: #fff; color: #000; } }
