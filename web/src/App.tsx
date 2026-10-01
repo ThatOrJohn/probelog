@@ -7,6 +7,7 @@ import { decodeSettings, fahrenheit, type Settings, type Status } from './protoc
 import { createDemoLogger, isDemo } from './demo'
 import { SetupDialog } from './SetupDialog'
 import { Trend } from './Trend'
+import { loadMarkers, runKey, saveMarkers, type Marker } from './markers'
 import { toUnit, useUnit } from './units'
 
 const POLL_MS = 5000
@@ -64,6 +65,8 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
   const [live, setLive] = useState(false)
+  /** Event markers for the loaded run, remembered per run in this browser. */
+  const [markers, setMarkersState] = useState<Marker[]>([])
   /** Serial + reading count at the last download, so setup can tell if data would be lost. */
   const [downloadedMark, setDownloadedMark] = useState<string | null>(null)
   /** Reading count the live chart is up to date with. */
@@ -168,6 +171,19 @@ export function App() {
     const t = setInterval(() => { if (!busyRef.current) tick.current() }, live ? LIVE_POLL_MS : POLL_MS)
     return () => clearInterval(t)
   }, [device, live])
+
+  // Load the markers saved for this run whenever a different run is shown.
+  const key = runKey(log)
+  const loadedKey = useRef<string | null>(null)
+  useEffect(() => {
+    if (key === loadedKey.current) return
+    loadedKey.current = key
+    setMarkersState(key ? loadMarkers(key) : [])
+  }, [key])
+  const setMarkers = (m: Marker[]) => {
+    setMarkersState(m)
+    if (key) saveMarkers(key, m)
+  }
 
   // Leave live view if the logger goes away.
   useEffect(() => { if (!device) setLive(false) }, [device])
@@ -290,7 +306,12 @@ export function App() {
   async function openCsv(file: File) {
     try {
       setLive(false)
-      setLog({ ...fromCsv(await file.text(), file.name), alarms: [] })
+      const { markers: fileMarkers, ...l } = fromCsv(await file.text(), file.name)
+      // Markers in the file win over any remembered for the same run.
+      const k = runKey(l)
+      if (k && fileMarkers.length) saveMarkers(k, fileMarkers)
+      loadedKey.current = null
+      setLog({ ...l, alarms: [] })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -299,7 +320,7 @@ export function App() {
   const exportCsv = () => {
     if (!log) return
     const first = log.times[0] ? stamp(new Date(log.times[0] * 1000)).slice(0, 10) : 'empty'
-    saveFile(`${safeName(status?.name ?? 'log')}-${first}.csv`, toCsv(log))
+    saveFile(`${safeName(status?.name ?? 'log')}-${first}.csv`, toCsv(log, markers))
   }
 
   const connected = !!device && !!status
@@ -375,7 +396,7 @@ export function App() {
 
       <Trend log={log} unit={unit} live={live} intervalSeconds={status?.intervalSeconds ?? null}
         details={status ? `${isDemo(device?.hid) ? 'Demo logger' : 'ThermaData logger'} · SN ${status.serial} · ${status.channelCount} probe${status.channelCount > 1 ? 's' : ''}` : 'From a CSV file'}
-        fileBase={safeName(status?.name ?? log?.title ?? 'chart')} />
+        fileBase={safeName(status?.name ?? log?.title ?? 'chart')} markers={markers} onMarkers={setMarkers} />
 
       <div class="actions">
         <div class="group">

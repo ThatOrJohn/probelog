@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'preact/hooks'
 import uPlot from 'uplot'
 import 'uplot/dist/uPlot.min.css'
 import type { LogData } from './log'
+import { sortMarkers, type Marker } from './markers'
 import { fmtClock, toUnit, type Unit } from './units'
 
 export interface AlarmLine { probe: number; f: number; kind: 'over' | 'under' }
@@ -188,6 +189,57 @@ function regionPlugin(getRegion: () => Region | null, theme: ChartTheme, k: numb
   }
 }
 
+/** Event markers: a dashed line and a numbered label at the top of the plot. */
+function markerPlugin(getMarkers: () => Marker[], theme: ChartTheme, k: number): uPlot.Plugin {
+  return {
+    hooks: {
+      draw: (u) => {
+        const markers = sortMarkers(getMarkers())
+        if (!markers.length) return
+        const { ctx, bbox } = u
+        const px = devicePixelRatio * k
+        ctx.save()
+        ctx.font = font(10 * px)
+        ctx.textBaseline = 'middle'
+        ctx.textAlign = 'left' // uPlot's axis drawing leaves other alignments set
+        let lastRight = -Infinity
+        markers.forEach((m, i) => {
+          const x = Math.round(u.valToPos(m.t, 'x', true))
+          if (x < bbox.left || x > bbox.left + bbox.width) return
+          ctx.strokeStyle = theme.text
+          ctx.globalAlpha = 0.45
+          ctx.setLineDash([3 * px, 3 * px])
+          ctx.lineWidth = px
+          ctx.beginPath()
+          ctx.moveTo(x, bbox.top)
+          ctx.lineTo(x, bbox.top + bbox.height)
+          ctx.stroke()
+          ctx.globalAlpha = 1
+          ctx.setLineDash([])
+          // Label: number, plus the text when there's room before the next one.
+          const label = m.label ? `${i + 1} ${m.label.length > 22 ? m.label.slice(0, 21) + '…' : m.label}` : `${i + 1}`
+          const w = ctx.measureText(label).width + 10 * px
+          const h = 16 * px
+          // Stack under the previous label if they'd overlap.
+          const y = bbox.top + 4 * px + (x - 2 * px < lastRight ? h + 3 * px : 0)
+          const left = Math.min(x + 2 * px, bbox.left + bbox.width - w)
+          ctx.fillStyle = theme.background
+          ctx.strokeStyle = theme.muted
+          ctx.lineWidth = px
+          ctx.beginPath()
+          ctx.rect(left, y, w, h)
+          ctx.fill()
+          ctx.stroke()
+          ctx.fillStyle = theme.text
+          ctx.fillText(label, left + 5 * px, y + h / 2)
+          lastRight = Math.max(lastRight, left + w)
+        })
+        ctx.restore()
+      },
+    },
+  }
+}
+
 export interface ChartSpec {
   width: number
   height: number
@@ -201,6 +253,7 @@ export interface ChartSpec {
   /** Size multiplier for fonts, lines and spacing (image export renders larger). */
   scale?: number
   region?: () => Region | null
+  markers?: () => Marker[]
   plugins?: uPlot.Plugin[]
 }
 
@@ -252,6 +305,7 @@ export function chartOptions(spec: ChartSpec): uPlot.Options {
       ...(spec.region ? [regionPlugin(spec.region, theme, k)] : []),
       alarmPlugin(spec.alarms, unit, theme, k),
       latestPlugin(theme, k),
+      ...(spec.markers ? [markerPlugin(spec.markers, theme, k)] : []),
       ...(spec.plugins ?? []),
     ],
   }
@@ -266,7 +320,7 @@ export const chartData = (log: LogData, unit: Unit): uPlot.AlignedData => [
  * Crosshair readout: time (clock and elapsed), each probe's value, and the difference
  * between probes, at the reading nearest the pointer. Built with textContent only.
  */
-function tooltipPlugin(unit: Unit, theme: ChartTheme, origin: () => number): uPlot.Plugin {
+function tooltipPlugin(unit: Unit, theme: ChartTheme, origin: () => number, getMarkers: () => Marker[]): uPlot.Plugin {
   let box: HTMLDivElement
   return {
     hooks: {
@@ -312,6 +366,14 @@ function tooltipPlugin(unit: Unit, theme: ChartTheme, origin: () => number): uPl
           row.append(document.createElement('span'), value, name)
           box.append(row)
         }
+        const markers = sortMarkers(getMarkers())
+        markers.forEach((m, n) => {
+          if (Math.abs(m.t - t) > 0.5) return
+          const row = document.createElement('div')
+          row.className = 'tip-marker'
+          row.textContent = `◆ ${n + 1}${m.label ? ` ${m.label}` : ''}`
+          box.append(row)
+        })
         box.hidden = false
         // Sit beside the crosshair, flipping sides near the right edge.
         const x = u.valToPos(t, 'x')
@@ -323,7 +385,7 @@ function tooltipPlugin(unit: Unit, theme: ChartTheme, origin: () => number): uPl
   }
 }
 
-export function Chart({ log, unit, alarms, follow = false, rangeSeconds = null, timeMode, measuring, region, onRegion, onUnzoom, viewRef }: {
+export function Chart({ log, unit, alarms, follow = false, rangeSeconds = null, timeMode, measuring, region, onRegion, onUnzoom, viewRef, markers, placing, onPlace }: {
   log: LogData
   unit: Unit
   alarms: AlarmLine[]
@@ -340,6 +402,10 @@ export function Chart({ log, unit, alarms, follow = false, rangeSeconds = null, 
   onUnzoom?: () => void
   /** Filled with a function returning the visible time range, for exporting what's on screen. */
   viewRef?: { current: (() => Region | null) | null }
+  markers: Marker[]
+  /** Next click on the chart places a marker at the nearest reading. */
+  placing: boolean
+  onPlace: (t: number) => void
 }) {
   const box = useRef<HTMLDivElement>(null)
   const plot = useRef<uPlot | null>(null)
@@ -352,6 +418,9 @@ export function Chart({ log, unit, alarms, follow = false, rangeSeconds = null, 
   const onRegionRef = useRef(onRegion); onRegionRef.current = onRegion
   const unzoomRef = useRef(onUnzoom); unzoomRef.current = onUnzoom
   const originRef = useRef(log.times[0] ?? 0); originRef.current = log.times[0] ?? 0
+  const markersRef = useRef(markers); markersRef.current = markers
+  const placingRef = useRef(placing); placingRef.current = placing
+  const onPlaceRef = useRef(onPlace); onPlaceRef.current = onPlace
 
   /** Applies the time-range buttons unless the user is looking at a drag-zoomed window. */
   const applyRange = (u: uPlot) => {
@@ -371,7 +440,8 @@ export function Chart({ log, unit, alarms, follow = false, rangeSeconds = null, 
       width: el.clientWidth, height, unit, alarms, probeCount, theme, timeMode,
       origin: originRef.current,
       region: () => regionRef.current,
-      plugins: [tooltipPlugin(unit, theme, () => originRef.current)],
+      markers: () => markersRef.current,
+      plugins: [tooltipPlugin(unit, theme, () => originRef.current, () => markersRef.current)],
     })
     opts.cursor = { drag: { x: true, y: false, setScale: true } }
     opts.hooks = {
@@ -397,6 +467,14 @@ export function Chart({ log, unit, alarms, follow = false, rangeSeconds = null, 
       u.cursor.drag!.setScale = !measureDrag
     }
     u.over.addEventListener('mousedown', down, true)
+    // Placing a marker: a click (not a drag) attaches it to the nearest reading.
+    const click = (e: MouseEvent) => {
+      if (!placingRef.current || u.select.width > 0) return
+      // From the click position itself, so it works even before any mousemove.
+      const i = u.posToIdx(e.clientX - u.over.getBoundingClientRect().left)
+      if (i != null && i >= 0 && i < u.data[0].length) onPlaceRef.current(u.data[0][i])
+    }
+    u.over.addEventListener('click', click)
     // uPlot resets the zoom on double-click; resume following and show everything.
     const unzoom = () => { zoomed.current = false; unzoomRef.current?.() }
     el.addEventListener('dblclick', unzoom)
@@ -404,6 +482,7 @@ export function Chart({ log, unit, alarms, follow = false, rangeSeconds = null, 
     ro.observe(el)
     return () => {
       u.over.removeEventListener('mousedown', down, true)
+      u.over.removeEventListener('click', click)
       el.removeEventListener('dblclick', unzoom)
       ro.disconnect()
       u.destroy()
@@ -428,8 +507,8 @@ export function Chart({ log, unit, alarms, follow = false, rangeSeconds = null, 
     else u.setScale('x', { min: log.times[0], max: log.times[log.times.length - 1] })
   }, [rangeSeconds])
 
-  // Redraw when the measured region changes (it's painted by a plugin).
-  useEffect(() => { plot.current?.redraw(false) }, [region])
+  // Redraw when the measured region or markers change (they're painted by plugins).
+  useEffect(() => { plot.current?.redraw(false) }, [region, markers])
 
-  return <div ref={box} class={`chart ${measuring ? 'measuring' : ''}`} />
+  return <div ref={box} class={`chart ${measuring ? 'measuring' : ''} ${placing ? 'placing' : ''}`} />
 }

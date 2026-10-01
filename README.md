@@ -22,7 +22,9 @@ Next time, the page reconnects on its own.
 - **Download** up to 8,000 readings per probe and chart them — zoom, 5 min / 30 min / all ranges, °F or °C
 - **Measure** — hover for both probes' values and their difference; drag across a stretch for its min / max / mean, change and rate (°/min)
 - **Clock or elapsed time** (T+00:12:30) on the time axis
+- **Event markers** — label moments like "heater on" (instantly during live view, or by clicking the chart); they're saved in the CSV
 - **Chart images** — save a report-ready PNG (light or dark) or copy it to the clipboard
+- **Printable report** — a one-page record with the chart, per-probe summary, measured region and markers; use Save as PDF to keep it
 - **Live view** of new readings as the logger records
 - **Alarms** — probes past their limits are flagged in red, the tab title shows the alarm, and each probe shows time spent in alarm
 - **Set up** the logger: name, interval, one or two probes, how it starts (now, later, on its button after a delay, or at a date and time) and stops (manually, when full, after N readings, or at a date and time), over/under alarms, and its clock

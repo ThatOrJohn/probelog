@@ -1,4 +1,5 @@
 // A downloaded (or re-opened) log, in a column layout that suits the chart.
+import { newMarker, nearestIndex, sortMarkers, type Marker } from './markers'
 import { INVALID_RAW, celsius, fahrenheit, type Reading, type Status } from './protocol'
 
 export interface LogData {
@@ -26,34 +27,66 @@ const pad = (n: number) => String(n).padStart(2, '0')
 export const stamp = (d: Date) =>
   `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 
-/** Same format as the `tdlog` command-line tool: one row per time, °F and °C per probe. */
-export function toCsv(log: LogData): string {
-  const head = ['time', ...log.probes.flatMap((_, i) => [`probe${i + 1}_f`, `probe${i + 1}_c`])]
+/** Quotes a CSV field when it holds a comma, quote or newline. */
+const csvField = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+
+/** Splits one CSV line, honouring quoted fields. */
+function csvSplit(line: string): string[] {
+  const out: string[] = []
+  let cur = '', quoted = false
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]
+    if (quoted) {
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++ }
+      else if (c === '"') quoted = false
+      else cur += c
+    } else if (c === '"') quoted = true
+    else if (c === ',') { out.push(cur); cur = '' }
+    else cur += c
+  }
+  out.push(cur)
+  return out
+}
+
+/**
+ * Same format as the `tdlog` command-line tool: one row per time, °F and °C per probe.
+ * Event markers, if any, go in a final `marker` column on the reading they're attached to.
+ */
+export function toCsv(log: LogData, markers: Marker[] = []): string {
+  const byRow = new Map<number, string[]>()
+  for (const m of sortMarkers(markers)) {
+    const i = nearestIndex(log.times, m.t)
+    if (i >= 0) byRow.set(i, [...(byRow.get(i) ?? []), m.label || 'marker'])
+  }
+  const head = ['time', ...log.probes.flatMap((_, i) => [`probe${i + 1}_f`, `probe${i + 1}_c`]), ...(byRow.size ? ['marker'] : [])]
   const rows = log.times.map((t, r) =>
     [stamp(new Date(t * 1000)), ...log.probes.flatMap((p) => {
       const f = p[r]
       return f == null ? ['', ''] : [f.toFixed(2), celsius(f).toFixed(2)]
-    })].join(','),
+    }), ...(byRow.size ? [csvField(byRow.get(r)?.join(' | ') ?? '')] : [])].join(','),
   )
   return [head.join(','), ...rows].join('\n') + '\n'
 }
 
-/** Reads a CSV written by `toCsv` (or `tdlog`). */
-export function fromCsv(text: string, title: string): LogData {
+/** Reads a CSV written by `toCsv` (or `tdlog`), including any markers. */
+export function fromCsv(text: string, title: string): LogData & { markers: Marker[] } {
   const [head, ...lines] = text.trim().split(/\r?\n/)
-  const cols = head.split(',')
+  const cols = csvSplit(head)
   const fCols = cols.flatMap((c, i) => (/^probe\d+_f$/.test(c) ? [i] : []))
+  const markerCol = cols.indexOf('marker')
   if (cols[0] !== 'time' || fCols.length === 0) throw new Error('Not a ProbeLog CSV file.')
   const times: number[] = []
   const probes: (number | null)[][] = fCols.map(() => [])
+  const markers: Marker[] = []
   for (const line of lines) {
-    const v = line.split(',')
+    const v = csvSplit(line)
     const t = new Date(v[0].replace(' ', 'T')).getTime()
     if (Number.isNaN(t)) continue
     times.push(t / 1000)
     fCols.forEach((c, i) => probes[i].push(v[c] === '' || v[c] == null ? null : Number(v[c])))
+    if (markerCol >= 0 && v[markerCol]) for (const label of v[markerCol].split(' | ')) markers.push(newMarker(t / 1000, label))
   }
-  return { title, times, probes }
+  return { title, times, probes, markers }
 }
 
 export interface ProbeStats { min: number; max: number; mean: number; count: number }

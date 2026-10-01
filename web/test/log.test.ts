@@ -68,4 +68,15 @@ describe('log', () => {
     expect(r.ratePerMin).toBeCloseTo(1, 6)
     expect(regionStats(l, 0, 1000, 2000)).toBeNull()
   })
+
+  it('round-trips event markers through CSV, quoting labels with commas', () => {
+    const csv = toCsv(log, [{ id: 'a', t: log.times[1], label: 'added ice, stirred' }, { id: 'b', t: log.times[1] + 3, label: 'lid "on"' }])
+    expect(csv.split('\n')[0]).toBe('time,probe1_f,probe1_c,probe2_f,probe2_c,marker')
+    expect(csv.split('\n')[1].endsWith(',')).toBe(true)
+    const back = fromCsv(csv, 'x')
+    expect(back.markers.map((m) => [m.t, m.label])).toEqual([[log.times[1], 'added ice, stirred'], [log.times[1], 'lid "on"']])
+    expect(back.probes[1][1]).toBeCloseTo(74.7)
+    // No markers → same columns as tdlog.
+    expect(toCsv(log).split('\n')[0]).toBe('time,probe1_f,probe1_c,probe2_f,probe2_c')
+  })
 })

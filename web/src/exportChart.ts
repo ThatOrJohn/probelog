@@ -2,9 +2,10 @@
 import uPlot from 'uplot'
 import { chartData, chartOptions, type AlarmLine, type ChartTheme, type Region, type TimeMode } from './Chart'
 import type { LogData } from './log'
+import type { Marker } from './markers'
 import type { Unit } from './units'
 
-const WIDTH = 1600 // CSS px; rendered at 2× for sharp text when scaled down
+const DEFAULT_WIDTH = 1600 // CSS px; rendered at 2× for sharp text when scaled down
 const CHART_HEIGHT = 720
 const PAD = 40
 const HEADER = 112
@@ -23,6 +24,13 @@ export interface ImageSpec {
   /** e.g. "SN D14380098 · 2 probes · every 5 s". */
   details: string
   region: Region | null
+  markers: Marker[]
+  /** Title, details and footer around the chart (off for the printed report, which has its own). */
+  frame?: boolean
+  /** Layout width in CSS px; narrower makes text and lines larger when the image is scaled to fit. */
+  width?: number
+  /** Plot height in CSS px (the report uses a shorter chart to fit one page). */
+  chartHeight?: number
 }
 
 const SANS = '"IBM Plex Sans", system-ui, sans-serif'
@@ -32,6 +40,11 @@ const stamp = (t: number) => new Date(t * 1000).toLocaleString([], { hour12: fal
 export async function renderChartImage(spec: ImageSpec): Promise<HTMLCanvasElement> {
   await document.fonts.ready
   const { theme, log } = spec
+  const frame = spec.frame ?? true
+  const header = frame ? HEADER : 48
+  const footer = frame ? FOOTER : 0
+  const chartHeight = spec.chartHeight ?? CHART_HEIGHT
+  const WIDTH = spec.width ?? DEFAULT_WIDTH
   const host = document.createElement('div')
   host.style.cssText = 'position:fixed;left:-20000px;top:0;'
   document.body.append(host)
@@ -45,9 +58,9 @@ export async function renderChartImage(spec: ImageSpec): Promise<HTMLCanvasEleme
     setTimeout(resolve, 1500) // never hang an export
   })
   const opts = chartOptions({
-    width: plotWidth * k, height: CHART_HEIGHT * k, unit: spec.unit, alarms: spec.alarms,
+    width: plotWidth * k, height: chartHeight * k, unit: spec.unit, alarms: spec.alarms,
     probeCount: log.probes.length, theme, timeMode: spec.timeMode, origin: log.times[0] ?? 0,
-    scale: k, region: () => spec.region,
+    scale: k, region: () => spec.region, markers: () => spec.markers,
     plugins: [{ hooks: { draw: () => drawn() } }],
   })
   let ready = nextDraw()
@@ -61,21 +74,25 @@ export async function renderChartImage(spec: ImageSpec): Promise<HTMLCanvasEleme
 
   const out = document.createElement('canvas')
   out.width = WIDTH * SCALE
-  out.height = (HEADER + CHART_HEIGHT + FOOTER) * SCALE
+  out.height = (header + chartHeight + footer) * SCALE
   const ctx = out.getContext('2d')!
   ctx.scale(SCALE, SCALE)
   ctx.fillStyle = theme.background
-  ctx.fillRect(0, 0, WIDTH, HEADER + CHART_HEIGHT + FOOTER)
+  ctx.fillRect(0, 0, WIDTH, header + chartHeight + footer)
 
   // Header: title, then details and the time range shown.
   ctx.textBaseline = 'alphabetic'
-  ctx.fillStyle = theme.text
-  ctx.font = `600 26px ${SANS}`
-  ctx.fillText(spec.title, PAD, 52)
+  ctx.textAlign = 'left'
   const [from, to] = spec.range ?? [log.times[0], log.times[log.times.length - 1]]
-  ctx.fillStyle = theme.muted
-  ctx.font = `14px ${MONO}`
-  ctx.fillText(`${spec.details}  ·  ${stamp(from)} → ${stamp(to)}  ·  °${spec.unit}`, PAD, 82)
+  if (frame) {
+    ctx.fillStyle = theme.text
+    ctx.font = `600 26px ${SANS}`
+    ctx.fillText(spec.title, PAD, 52)
+    ctx.fillStyle = theme.muted
+    ctx.font = `14px ${MONO}`
+    ctx.fillText(`${spec.details}  ·  ${stamp(from)} → ${stamp(to)}  ·  °${spec.unit}`, PAD, 82)
+  }
+  const legendY = frame ? 52 : 30
 
   // Legend, right-aligned, with line keys like the marks.
   ctx.font = `14px ${MONO}`
@@ -84,24 +101,25 @@ export async function renderChartImage(spec: ImageSpec): Promise<HTMLCanvasEleme
     const label = `CH ${i + 1}`
     x -= ctx.measureText(label).width
     ctx.fillStyle = theme.text
-    ctx.fillText(label, x, 52)
+    ctx.fillText(label, x, legendY)
     x -= 28
     ctx.fillStyle = theme.probes[i]
-    ctx.fillRect(x, 46, 20, 3)
+    ctx.fillRect(x, legendY - 6, 20, 3)
     x -= 24
   }
 
-  ctx.drawImage(u.ctx.canvas, PAD, HEADER, plotWidth, CHART_HEIGHT)
+  ctx.drawImage(u.ctx.canvas, PAD, header, plotWidth, chartHeight)
   u.destroy()
   host.remove()
 
-  // Footer.
-  ctx.fillStyle = theme.muted
-  ctx.font = `12px ${MONO}`
-  const y = HEADER + CHART_HEIGHT + 34
-  ctx.fillText(`ProbeLog · exported ${stamp(Date.now() / 1000)}`, PAD, y)
-  const site = 'thatorjohn.github.io/probelog'
-  ctx.fillText(site, WIDTH - PAD - ctx.measureText(site).width, y)
+  if (frame) {
+    ctx.fillStyle = theme.muted
+    ctx.font = `12px ${MONO}`
+    const y = header + chartHeight + 34
+    ctx.fillText(`ProbeLog · exported ${stamp(Date.now() / 1000)}`, PAD, y)
+    const site = 'thatorjohn.github.io/probelog'
+    ctx.fillText(site, WIDTH - PAD - ctx.measureText(site).width, y)
+  }
   return out
 }
 

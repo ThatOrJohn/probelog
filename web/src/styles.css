@@ -242,3 +242,46 @@ fieldset.field label.alarm { display: grid; grid-template-columns: auto 3.4rem a
 .warning .row { margin-top: 10px; gap: 16px; }
 .error { color: #ff8a80; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+/* Event markers */
+.chart.placing .u-over { cursor: crosshair; }
+.marker-btn.active { color: var(--bright); border-color: var(--text); }
+.trend-tools .marker-btn { font-size: 11px; padding: 4px 10px; min-height: 28px; border-radius: 3px; color: var(--muted); }
+.place-hint { color: var(--warn); }
+.tip-marker { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); color: var(--bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.markers { border: 1px solid var(--line-strong); border-radius: 4px; padding: 10px 12px; margin-top: 4px; }
+.marker-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font: 13px var(--mono); }
+.marker-list li { display: grid; grid-template-columns: 1.5rem 6.5rem minmax(8rem, 1fr) auto auto; gap: 12px; align-items: center; }
+.marker-num { color: var(--bg); background: var(--text); border-radius: 3px; text-align: center; font-size: 11px; font-weight: 600; }
+.marker-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.marker-list input { width: 100%; font-size: 13px; padding: 4px 8px; }
+.marker-values { display: flex; gap: 14px; font-variant-numeric: tabular-nums; }
+.marker-list .link { font: 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+@media (max-width: 640px) { .marker-list li { grid-template-columns: 1.5rem 1fr auto; } .marker-values { display: none; } }
+
+/* Printed report: hidden on screen, the only thing printed. */
+.report { display: none; }
+@media print {
+  /* Sized so a typical run (chart, summary, a few markers) fits one Letter/A4 page. */
+  @page { margin: 12mm; }
+  /* The dark color scheme would otherwise tint the page around the report. */
+  :root { color-scheme: light; background: #fff; }
+  body { background: #fff !important; color: #16191d; }
+  body:has(> .report) .page { display: none !important; }
+  .report { display: block; font: 9.5pt/1.4 var(--sans); color: #16191d; }
+  .report-head { display: block; border: 0; padding: 0; margin: 0; }
+  .report h1 { font: 600 16pt var(--sans); margin: 1pt 0 2pt; }
+  .report h2 { font: 600 10.5pt var(--sans); margin: 10pt 0 4pt; break-after: avoid; }
+  .report-kicker, .report-meta, .report-note { font: 8.5pt var(--mono); color: #5f6873; letter-spacing: 0.04em; }
+  .report-kicker { text-transform: uppercase; letter-spacing: 0.12em; }
+  .report-facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4pt 16pt; margin: 8pt 0; }
+  .report-facts dt { font: 7.5pt var(--mono); color: #5f6873; text-transform: uppercase; letter-spacing: 0.08em; }
+  .report-facts dd { margin: 0; font: 9pt var(--mono); }
+  .report-chart { display: block; width: 100%; height: auto; border: 0.5pt solid #c9ced4; break-inside: avoid; }
+  .report-table { width: 100%; border-collapse: collapse; font: 9pt var(--mono); font-variant-numeric: tabular-nums; }
+  .report-table tr { break-inside: avoid; }
+  .report-table th, .report-table td { text-align: right; padding: 2pt 6pt; border-bottom: 0.5pt solid #e6e9ed; }
+  .report-table thead th { font-size: 7.5pt; color: #5f6873; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 400; }
+  .report-table tbody th, .report-table .left, .report-table thead th:first-child { text-align: left; }
+  .report-foot { margin-top: 10pt; padding: 0; font: 7.5pt var(--sans); color: #5f6873; text-align: left; }
+}
