@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendLatest, beyond, change, recent, timeInAlarm, fromCsv, logFromReadings, stats, toCsv } from '../src/log'
+import { appendLatest, beyond, change, recent, regionStats, timeInAlarm, fromCsv, logFromReadings, stats, toCsv } from '../src/log'
 import { rawFor } from '../src/protocol'
 
 describe('log', () => {
@@ -57,5 +57,15 @@ describe('log', () => {
     expect(beyond(70, { kind: 'over', f: 70 })).toBe(false)
     expect(timeInAlarm(l, 0, [{ kind: 'over', f: 70 }])).toEqual({ count: 2, seconds: 20 })
     expect(timeInAlarm(l, 0, [{ kind: 'under', f: 70 }]).count).toBe(1)
+  })
+
+  it('computes region stats with a least-squares rate', () => {
+    // 1 °F per minute with a null gap, plus readings outside the region.
+    const l = { title: 't', times: [0, 60, 120, 180, 240, 300], probes: [[50, 70, 71, null, 73, 90]] }
+    const r = regionStats(l, 0, 60, 240, [{ kind: 'over', f: 72 }])!
+    expect(r).toMatchObject({ count: 3, min: 70, max: 73, change: 3, inAlarm: 1 })
+    expect(r.mean).toBeCloseTo(71.333, 3)
+    expect(r.ratePerMin).toBeCloseTo(1, 6)
+    expect(regionStats(l, 0, 1000, 2000)).toBeNull()
   })
 })

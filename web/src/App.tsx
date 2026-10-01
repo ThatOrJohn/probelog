@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'preact/hooks'
-import { Chart, type AlarmLine } from './Chart'
+import type { AlarmLine } from './Chart'
 import { LoggerDevice, describeLogger, grantedLoggers, requestLogger, webHidSupported, type LoggerSummary } from './device'
 import { appendLatest, beyond, fromCsv, logFromReadings, recent, stamp, toCsv, type LogData } from './log'
 import { ChannelPanel, LoggerPanel, type ReadingSource } from './Panels'
 import { decodeSettings, fahrenheit, type Settings, type Status } from './protocol'
 import { createDemoLogger, isDemo } from './demo'
 import { SetupDialog } from './SetupDialog'
-import { fmtClock, toUnit, useUnit } from './units'
+import { Trend } from './Trend'
+import { toUnit, useUnit } from './units'
 
 const POLL_MS = 5000
 /** Live view polls often enough to catch every reading at short intervals. */
 const LIVE_POLL_MS = 1500
-const RANGES = [{ label: '5 MIN', seconds: 300 }, { label: '30 MIN', seconds: 1800 }, { label: 'ALL', seconds: null }] as const
 
 interface LoadedLog extends LogData { alarms: AlarmLine[] }
 
@@ -64,7 +64,6 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null)
   const [setupOpen, setSetupOpen] = useState(false)
   const [live, setLive] = useState(false)
-  const [range, setRange] = useState<number | null>(null)
   /** Serial + reading count at the last download, so setup can tell if data would be lost. */
   const [downloadedMark, setDownloadedMark] = useState<string | null>(null)
   /** Reading count the live chart is up to date with. */
@@ -374,31 +373,9 @@ export function App() {
           available={available} onConnectTo={connectTo} onAdd={addLogger} onDemo={() => run('Starting demo', startDemo)} />
       </div>
 
-      <section class="panel trend" aria-label="Trend">
-        <div class="trend-head">
-          <div class="trend-meta">
-            <span class="label" style={{ color: 'var(--bright)' }}>Trend</span>
-            {live && <span class="led live">Live</span>}
-            {lastTime && <span class="label muted">Last {lastTime.toLocaleTimeString([], { hour12: false })}{status && live ? ` · every ${fmtClock(status.intervalSeconds)}` : ''}</span>}
-          </div>
-          <div class="ranges" role="group" aria-label="Time range">
-            {RANGES.map((r) => (
-              <button key={r.label} aria-pressed={range === r.seconds} disabled={!log} onClick={() => setRange(r.seconds)}>{r.label}</button>
-            ))}
-          </div>
-        </div>
-        {log && log.times.length ? (
-          <>
-            <Chart log={log} unit={unit} alarms={log.alarms} follow={live} rangeSeconds={range} onUnzoom={() => setRange(null)} />
-            <p class="hint">Drag to zoom · double-click to reset · {log.times.length.toLocaleString()} samples · {log.title}</p>
-          </>
-        ) : (
-          <div class="empty">
-            <strong>No data</strong>
-            Download from the logger, start live view, or open a CSV you saved earlier.
-          </div>
-        )}
-      </section>
+      <Trend log={log} unit={unit} live={live} intervalSeconds={status?.intervalSeconds ?? null}
+        details={status ? `${isDemo(device?.hid) ? 'Demo logger' : 'ThermaData logger'} · SN ${status.serial} · ${status.channelCount} probe${status.channelCount > 1 ? 's' : ''}` : 'From a CSV file'}
+        fileBase={safeName(status?.name ?? log?.title ?? 'chart')} />
 
       <div class="actions">
         <div class="group">

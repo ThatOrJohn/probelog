@@ -125,3 +125,42 @@ export function timeInAlarm(log: LogData, probe: number, limits: { kind: 'over' 
   const interval = n > 1 ? (log.times[n - 1] - log.times[0]) / (n - 1) : 0
   return { count, seconds: count * interval }
 }
+
+export interface RegionStats {
+  count: number
+  min: number
+  max: number
+  mean: number
+  /** Last minus first valid reading in the region, °F. */
+  change: number
+  /** Least-squares slope, °F per minute (robust to noise, unlike last − first). */
+  ratePerMin: number | null
+  inAlarm: number
+}
+
+/** Statistics for one probe between two times (seconds, inclusive). */
+export function regionStats(
+  log: LogData, probe: number, t0: number, t1: number, limits: { kind: 'over' | 'under'; f: number }[] = [],
+): RegionStats | null {
+  const v = log.probes[probe] ?? []
+  const ts: number[] = [], fs: number[] = []
+  for (let i = 0; i < log.times.length; i++) {
+    const t = log.times[i], f = v[i]
+    if (t >= t0 && t <= t1 && f != null) { ts.push(t); fs.push(f) }
+  }
+  if (!fs.length) return null
+  const n = fs.length
+  const mean = fs.reduce((a, b) => a + b, 0) / n
+  const tMean = ts.reduce((a, b) => a + b, 0) / n
+  let num = 0, den = 0
+  for (let i = 0; i < n; i++) { num += (ts[i] - tMean) * (fs[i] - mean); den += (ts[i] - tMean) ** 2 }
+  return {
+    count: n,
+    min: Math.min(...fs),
+    max: Math.max(...fs),
+    mean,
+    change: fs[n - 1] - fs[0],
+    ratePerMin: den > 0 ? (num / den) * 60 : null,
+    inAlarm: fs.filter((f) => limits.some((l) => beyond(f, l))).length,
+  }
+}

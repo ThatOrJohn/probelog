@@ -142,7 +142,48 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .ranges { display: flex; gap: 4px; }
 .ranges button { font-size: 11px; padding: 4px 10px; min-height: 28px; color: var(--muted); border-radius: 3px; }
 .ranges button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; }
-.chart { width: 100%; }
+.chart { width: 100%; position: relative; }
+.chart.measuring .u-over { cursor: col-resize; }
+.trend-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* Crosshair readout: values lead, names follow, short line keys. */
+.chart-tip {
+  position: absolute; z-index: 5; pointer-events: none; min-width: 168px;
+  background: rgb(11 13 15 / 0.94); border: 1px solid var(--line-strong); border-radius: 4px;
+  padding: 8px 10px; font: 12px var(--mono); color: var(--text); box-shadow: 0 4px 16px rgb(0 0 0 / 0.4);
+}
+.tip-time { color: var(--muted); font-size: 11px; letter-spacing: 0.04em; margin-bottom: 6px; white-space: pre; }
+.tip-row { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 8px; line-height: 1.6; }
+.tip-row strong { color: var(--bright); font-weight: 500; font-variant-numeric: tabular-nums; }
+.tip-key { width: 12px; height: 2px; border-radius: 1px; }
+.tip-name { color: var(--muted); font-size: 11px; }
+.tip-diff { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+
+/* Export menu */
+.menu { position: relative; }
+.menu summary {
+  list-style: none; cursor: pointer; font: 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted); border: 1px solid var(--line-strong); border-radius: 3px; padding: 6px 10px; min-height: 28px;
+}
+.menu summary::-webkit-details-marker { display: none; }
+.menu summary.disabled { opacity: 0.4; pointer-events: none; }
+.menu[open] summary { color: var(--bright); border-color: var(--muted); }
+.menu-body {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 10; width: 220px;
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  background: var(--panel); border: 1px solid var(--line-strong); border-radius: 4px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.5);
+}
+.menu-body .ranges button { flex: 1; }
+
+/* Measured region */
+.region { border: 1px solid var(--line-strong); border-radius: 4px; padding: 10px 12px; margin-top: 4px; }
+.region-head { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.region-head .link { margin-left: auto; font: 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.region-table { width: 100%; border-collapse: collapse; font: 13px var(--mono); font-variant-numeric: tabular-nums; }
+.region-table th, .region-table td { text-align: right; padding: 4px 8px; white-space: nowrap; }
+.region-table thead th { font-size: 11px; font-weight: 400; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; }
+.region-table tbody th { text-align: left; font-weight: 400; }
+.region { overflow-x: auto; }
 .hint { font: 11px var(--mono); letter-spacing: 0.06em; color: var(--muted); text-transform: uppercase; }
 .empty { padding: 56px 16px; text-align: center; color: var(--muted); font-family: var(--sans); }
 .empty strong { display: block; color: var(--text); font: 13px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
